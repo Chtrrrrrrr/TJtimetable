@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!--
+      The 统一身份认证 token is a credential; it must not travel in cloud
+      backups. There is nothing to restore from it on a new device anyway, since
+      the token is bound to the session that created it.
+    -->
+    <exclude domain="sharedpref" path="tj_credentials.preferences_pb" />
+</full-backup-content>

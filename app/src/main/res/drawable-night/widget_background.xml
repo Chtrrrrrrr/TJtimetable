@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  深色模式下的卡片背景。与 drawable/widget_background.xml 形状完全一致，只是把
+  Primer 深色 token 换进来：canvas #0D1117 / border #30363D。
+  资源限定符由系统 uiMode 解析，所以小组件会跟随系统深色模式。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FF0D1117" />
+    <stroke
+        android:width="1dp"
+        android:color="#FF30363D" />
+    <corners android:radius="18dp" />
+</shape>

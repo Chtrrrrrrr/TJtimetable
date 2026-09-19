@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  小组件卡片背景：Primer 风格的平面圆角矩形，外加 1dp 细边框。
+
+  Glance 1.1 没有 border 修饰符，所以细边框只能作为 drawable 随内容一起绘制
+  （见 TimetableWidget.kt 的 Image 图层）。颜色与 ui/theme/Color.kt 中的
+  Primer token 保持一致：
+    浅色 canvas #FFFFFF / border #D0D7DE
+    深色 canvas #0D1117 / border #30363D（见 drawable-night/widget_background.xml）
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FFFFFFFF" />
+    <stroke
+        android:width="1dp"
+        android:color="#FFD0D7DE" />
+    <corners android:radius="18dp" />
+</shape>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches GitHub Primer's canvas.default; values-night overrides it. -->
+    <color name="tj_canvas">#FFFFFFFF</color>
+</resources>

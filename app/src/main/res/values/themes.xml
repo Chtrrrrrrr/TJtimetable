@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Parented on the platform Material theme so no Material Components XML
+      dependency is needed; all real theming happens in Compose (Theme.kt).
+      windowBackground is set so the launch window matches the Compose canvas
+      and there is no white flash in dark mode.
+    -->
+    <style name="Theme.TJtimetable" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/tj_canvas</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

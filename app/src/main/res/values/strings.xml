@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TJ课表</string>
+
+    <!-- 桌面小组件 -->
+    <string name="widget_timetable_label">今日课程</string>
+    <string name="widget_timetable_description">在桌面显示今天的课程、上课时间与教室</string>
+    <string name="widget_refresh_action">刷新课表</string>
+
+    <!-- 小组件：状态与文案 -->
+    <string name="widget_state_loading">正在读取课表…</string>
+    <string name="widget_state_not_imported">未导入课表</string>
+    <string name="widget_state_not_imported_hint">点按打开 TJ课表，登录后导入本学期课表</string>
+    <string name="widget_state_no_courses">本学期还没有课程</string>
+    <string name="widget_state_no_courses_hint">点按打开 TJ课表，重新导入或添加课程</string>
+    <string name="widget_state_no_class">今天没有课 🎉</string>
+    <string name="widget_state_not_started">还没开学 🎒</string>
+    <string name="widget_state_vacation">假期中 🌴</string>
+    <string name="widget_state_term_over">本学期已结束 🏁</string>
+
+    <!-- 小组件：行与标记。%1$s 为时间/课程，%1$d 为数量 -->
+    <string name="widget_week">第 %1$d 周</string>
+    <string name="widget_count_courses">%1$d 门课</string>
+    <string name="widget_count_none">无课</string>
+    <string name="widget_chip_running">进行中</string>
+    <string name="widget_chip_makeup">补课</string>
+    <string name="widget_running_remaining">进行中 · 还剩 %1$d 分钟</string>
+    <string name="widget_next_today">下一节 %1$s</string>
+    <string name="widget_next_later">下节课 %1$s</string>
+    <string name="widget_overflow">还有 %1$d 门课</string>
+    <string name="widget_no_upcoming">暂无后续课程</string>
+    <string name="widget_days_to_start">距开学还有 %1$d 天</string>
+
+    <!-- 上课提醒 -->
+    <string name="reminder_channel_name">上课提醒</string>
+    <string name="reminder_channel_description">在每节课开始前提醒</string>
+    <string name="reminder_now">该上课了：%1$s</string>
+    <string name="reminder_soon">%1$d 分钟后上课：%2$s</string>
+    <string name="reminder_permission_needed">需要通知权限才能发送上课提醒</string>
+</resources>

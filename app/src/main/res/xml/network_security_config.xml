@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext HTTP, scoped to 同济 hosts only.
+
+  The 教务 SSO flow redirects to a **plain http** URL —
+  `http://1.tongji.edu.cn/ssologin?token=…&uid=…&ts=…` — before continuing on to https.
+  Android blocks cleartext by default from API 28 onwards, so with `targetSdk 35` that
+  redirect failed with `net::ERR_CLEARTEXT_NOT_PERMITTED` and the login page never loaded.
+
+  Scoped deliberately rather than using `android:usesCleartextTraffic="true"`: that flag
+  would permit plaintext to *every* host, including the open-platform API calls that carry
+  a bearer token. Restricting it to `tongji.edu.cn` and its subdomains keeps the exception
+  as narrow as the school's own redirect requires.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">tongji.edu.cn</domain>
+    </domain-config>
+</network-security-config>

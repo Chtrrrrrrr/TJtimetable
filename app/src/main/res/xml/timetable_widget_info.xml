@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  今日课程小组件。
+
+  尺寸：minWidth/minHeight 给出最小尺寸（1 行高，110dp 宽），用户可横向/纵向自由拉伸；
+  targetCellWidth/targetCellHeight 是 API 31+ 的默认落位（2x2），老系统忽略。
+  实际渲染的密度由 TimetableWidget 的 WidgetSizes 声明决定：那里列了 2x1 到 5x4 的一组
+  尺寸，Glance 会挑最接近的一个，所以这里的下限要放到最小那档，否则 1 行的尺寸用不了。
+  Glance 侧用 SizeMode.Responsive + LocalSize 决定渲染几行，因此 2x2 与 4x2 是同一
+  份代码的两种密度，而不是两套布局。
+
+  updatePeriodMillis 为 30 分钟——系统允许的最小值。它只负责“重新渲染”，真正的
+  数据读取由 TimetableWidget.refresh() 完成（见 TimetableWidgetReceiver.onUpdate），
+  因为“正在进行/下一节”依赖当前时间，必须整体重画。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_timetable_description"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:minHeight="40dp"
+    android:minResizeHeight="40dp"
+    android:minResizeWidth="110dp"
+    android:minWidth="110dp"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellHeight="2"
+    android:targetCellWidth="2"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen" />
