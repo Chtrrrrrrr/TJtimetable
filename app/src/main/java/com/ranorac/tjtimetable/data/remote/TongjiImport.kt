@@ -88,7 +88,12 @@ object TongjiImport {
                         continue
                     }
                     val raw = entry.weekNum ?: entry.weekstr
-                    var weeks = WeekPattern.fromApiFields(entry.weeks, entry.weekNum, null)
+                    // `weekstr` is a real fallback field, not merely a label for the warning
+                    // below: `fromApiFields` falls back to its third argument, so omitting it
+                    // meant a slot whose `weekNum` was missing or unparseable while `weekstr`
+                    // carried "[1-17单]" was widened to the whole term — wrong weeks drawn and
+                    // spurious reminders. The resolved `weeks` array still wins when present.
+                    var weeks = WeekPattern.fromApiFields(entry.weeks, entry.weekNum, entry.weekstr)
                     if (weeks.isEmpty) {
                         weeks = defaultWeeks
                         if (defaultWeeks.isNotEmpty) {

@@ -1,12 +1,12 @@
 # TJ课表 · TJtimetable
 
-![version](https://img.shields.io/badge/version-2.1.8-blue)
+![version](https://img.shields.io/badge/version-2.2.1-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Android-3DDC84)
 ![minSdk](https://img.shields.io/badge/minSdk-26-orange)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF)
 ![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)
-![tests](https://img.shields.io/badge/tests-512%20passed-success)
+![tests](https://img.shields.io/badge/tests-540%20passed-success)
 ![Vibe%20Coded](https://img.shields.io/badge/vibe--coded-yes-ff69b4.svg)
 
 > 同济大学手机课表应用 · 使用 DeepSeek Harness开发
@@ -26,9 +26,13 @@
 - **桌面小组件**——Glance 实现，多比例自适应，显示今日课程、进行中与下一节。
 - **系统日历注册**——写入用户**自己选定**的日历，默认**只写本周**，可一键从日历移除。
 - **上课提醒**——基于 WorkManager 的应用内通知，节假日与补课日自动被尊重。
-- **日历文件（.ics）导入导出**——**无需任何凭据**的课表进出通道，含单双周与调休往返。
-- **教务导入**——支持同济开放平台两种课表接口；重新导入时保留自定义配色、备注与隐藏状态。
+- **日历文件（.ics）导入导出**——**无需任何凭据**的课表进出通道，含单双周与调休往返；
+  兼容带 `Z`、带 `+0800`、带 `TZID` 的各种日历文件。
+- **教务导入**——内置浏览器旁观教务页面自己发出的课表请求（**全程不接触口令**），
+  也可粘贴响应体兜底；支持同济开放平台两种课表接口；重新导入时保留自定义配色、备注与隐藏状态。
 - **课程详情底栏**——课程学分、考核方式、改配色、记备注、隐藏课程。
+- **数据同源**——界面网格、桌面小组件、系统日历与上课提醒全部由同一份
+  `TimetableResolver` 展开，节假日、补课日、单双周不可能在其中一处与另一处不一致。
 
 ## 部署项目
 

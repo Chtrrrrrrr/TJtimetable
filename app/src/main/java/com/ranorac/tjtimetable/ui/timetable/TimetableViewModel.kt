@@ -9,10 +9,13 @@ import com.ranorac.tjtimetable.data.repo.TimetableRepository
 import com.ranorac.tjtimetable.domain.ClassOccurrence
 import com.ranorac.tjtimetable.domain.Timetable
 import com.ranorac.tjtimetable.domain.TimetableResolver
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -28,11 +31,30 @@ data class TimetableUiState(
     /** True when the student is looking at a week other than the current one. */
     val isBrowsingOtherWeek: Boolean = false,
     val settings: AppSettings = AppSettings(),
+    /**
+     * Today's date, refreshed while the screen is on.
+     *
+     * Carried in the state rather than read with `LocalDate.now()` inside the composables,
+     * because those reads are `remember`ed: the app is designed to be left running, so a
+     * student who resumed it the next morning kept looking at yesterday's highlighted
+     * column, yesterday's column order under 「从今天开始显示」, and last night's week.
+     */
+    val today: LocalDate = LocalDate.now(),
     /** One-shot message for a snackbar. */
     val message: String? = null,
 ) {
     val hasData: Boolean get() = timetable?.isEmpty == false
 }
+
+/**
+ * How often [TimetableViewModel.today] is re-read.
+ *
+ * A minute is far more often than the value changes, and that is deliberate: the tick is
+ * what makes the roll-over happen *while the screen is being looked at* rather than at
+ * whatever moment the next database or settings emission happens to arrive. The flow is
+ * cold and only runs while the UI state is subscribed.
+ */
+private const val TODAY_TICK_MILLIS = 60_000L
 
 /**
  * Drives the timetable screen.
@@ -54,19 +76,33 @@ class TimetableViewModel(
     private val pinnedWeek = MutableStateFlow<Int?>(null)
     private val message = MutableStateFlow<String?>(null)
 
-    private val today: LocalDate get() = LocalDate.now()
+    /**
+     * Emits today's date now and then every minute for as long as it is collected.
+     *
+     * Without a ticking source the whole `uiState` only recomputed when the timetable or
+     * the settings changed, so a process that survived midnight kept yesterday's date —
+     * and therefore yesterday's highlighted column, column order and "current week".
+     */
+    private val todayFlow: Flow<LocalDate> = flow {
+        while (true) {
+            emit(LocalDate.now())
+            delay(TODAY_TICK_MILLIS)
+        }
+    }
 
     val uiState: StateFlow<TimetableUiState> = combine(
         repository.observeTimetable(),
         settingsStore.settings,
         pinnedWeek,
         message,
-    ) { timetable, settings, pinned, msg ->
+        todayFlow,
+    ) { timetable, settings, pinned, msg, today ->
         if (timetable == null) {
             return@combine TimetableUiState(
                 loading = false,
                 message = msg,
                 settings = settings,
+                today = today,
             )
         }
         val term = timetable.term
@@ -79,6 +115,7 @@ class TimetableViewModel(
             currentWeek = currentWeek,
             isBrowsingOtherWeek = pinned != null && pinned != currentWeek,
             settings = settings,
+            today = today,
             message = msg,
         )
     }.stateIn(

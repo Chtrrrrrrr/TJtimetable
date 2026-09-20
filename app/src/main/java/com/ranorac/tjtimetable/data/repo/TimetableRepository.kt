@@ -17,6 +17,7 @@ import com.ranorac.tjtimetable.data.remote.TongjiApi
 import com.ranorac.tjtimetable.data.remote.TongjiApiException
 import com.ranorac.tjtimetable.data.remote.TongjiImport
 import com.ranorac.tjtimetable.domain.Course
+import com.ranorac.tjtimetable.domain.AdjustmentSource
 import com.ranorac.tjtimetable.domain.CourseSession
 import com.ranorac.tjtimetable.domain.DayAdjustment
 import com.ranorac.tjtimetable.domain.PeriodSchedule
@@ -269,16 +270,23 @@ class TimetableRepository(
      *
      * Runs without a token, because the 校历 endpoint needs no authorisation —
      * so 调休 information is available even before the student logs in.
-     * Failure is silent and non-destructive: a stale-but-present 校历 beats
-     * clearing it because the network blipped.
+     * Failure is non-destructive: a stale-but-present 校历 beats clearing it because
+     * the network blipped.
+     *
+     * @return the number of days now known, or **null when the refresh did not happen**
+     *   (the request failed). Null and 0 are different answers, and callers that remove a
+     *   manual override before refreshing need to tell them apart: "the 校历 says nothing
+     *   about this date" is fine, whereas "we never reached the 校历" means the date would
+     *   be left with no row at all — and a date with no row falls through to "its own
+     *   weekday", which turns a 节假日 back into a teaching day.
      */
-    suspend fun refreshAdjustments(term: TermCalendar): Int {
+    suspend fun refreshAdjustments(term: TermCalendar): Int? {
         val from = term.firstWeekStart.minusDays(7)
         val to = term.endDate.plusDays(7)
         val raw = try {
             api.schoolCalendar(from, to)
         } catch (e: TongjiApiException) {
-            return 0
+            return null
         }
         if (raw.isEmpty()) return 0
 
@@ -305,6 +313,42 @@ class TimetableRepository(
         notifyChanged()
     }
 
+    /**
+     * Drops the manual override for [date] and puts the 校历's own row back **atomically**.
+     *
+     * The obvious implementation — `clearAdjustment` then `refreshAdjustments` — is wrong, and
+     * wrong in the one direction that matters. `refreshAdjustments` filters out every date that
+     * still holds a MANUAL row, so on a failed refresh the deleted row is gone and no derived
+     * row replaces it; a date with *no* row means "run its own weekday", so a 节假日 quietly
+     * turns back into a teaching day. Doing it in the other order does not help either: the
+     * refresh still sees the manual row and filters that date out.
+     *
+     * So the derived row is written first (from a fresh 校历 read) and the manual row is only
+     * deleted once that write is in. `upsert` is a REPLACE on the (termId, epochDay) key, so
+     * the restored row lands before the delete and the delete then removes the MANUAL row
+     * alone.
+     *
+     * @return false when the 校历 could not be read and nothing was changed.
+     */
+    suspend fun restoreDerivedAdjustment(termId: String, date: LocalDate): Boolean {
+        val term = termDao.byId(termId)?.toDomain() ?: return false
+        val raw = try {
+            api.schoolCalendar(date, date)
+        } catch (e: TongjiApiException) {
+            return false
+        }
+        val derived = ScheduleAdjustmentSet.fromApiCalendar(raw).get(date)
+        // Nothing special about this date in the 校历 either: the row simply goes away, and the
+        // date correctly falls back to its own weekday.
+        if (derived != null) adjustmentDao.upsert(derived.toEntity(termId))
+        val manual = adjustmentDao.forTerm(termId).any {
+            it.epochDay == date.toEpochDay() && it.sourceName == AdjustmentSource.MANUAL.name
+        }
+        if (manual) adjustmentDao.delete(termId, date.toEpochDay())
+        notifyChanged()
+        return true
+    }
+
     /** Removes an override, restoring whatever the 校历 says. */
     suspend fun clearAdjustment(termId: String, date: LocalDate) {
         adjustmentDao.delete(termId, date.toEpochDay())
@@ -314,14 +358,35 @@ class TimetableRepository(
     /**
      * Applies the 调休 rules parsed out of a pasted 教务处 notice.
      *
+     * Dates outside [from, to] — a week either side of the term, which is where 调休 for the
+     * first and last teaching week legitimately lands — are refused rather than written.
+     * The notice text carries a month/day but the caller supplies the year, and the UI always
+     * supplies the current one; pasting LAST year's notice would otherwise mark this year's
+     * real teaching days as holidays and silently suppress the classes taught on them.
+     *
+     * @param onRejected called with how many parsed dates fell outside the term, so the
+     *   screen can say so instead of reporting a clean success.
      * @return how many dates were set.
      */
-    suspend fun applyNotice(termId: String, noticeText: String, year: Int): Int {
+    suspend fun applyNotice(
+        termId: String,
+        noticeText: String,
+        year: Int,
+        onRejected: (Int) -> Unit = {},
+    ): Int {
         val parsed = ScheduleAdjustmentSet.parseNotice(noticeText, year)
         if (parsed.isEmpty()) return 0
-        adjustmentDao.upsertAll(parsed.map { it.toEntity(termId) })
+
+        // `parseNotice` returns a plain list and every row in it is MANUAL by construction.
+        val days: List<DayAdjustment> = parsed
+        val term = termDao.byId(termId)?.toDomain()
+        val (inRange, outOfRange) = days.insideTerm(term)
+        if (outOfRange.isNotEmpty()) onRejected(outOfRange.size)
+        if (inRange.isEmpty()) return 0
+
+        adjustmentDao.upsertAll(inRange.map { it.toEntity(termId) })
         notifyChanged()
-        return parsed.size
+        return inRange.size
     }
 
     // --------------------------------------------------------- course edits
@@ -630,3 +695,29 @@ class TimetableRepository(
  */
 private val Course.teachingUnitKey: String
     get() = teachingClassId?.toString() ?: courseCode ?: name
+
+/** Slack allowed around the term when validating dates parsed out of a 教务处 notice. */
+private const val NOTICE_RANGE_SLACK_DAYS = 7L
+
+/**
+ * Splits 调休 rows parsed from a notice into the ones that belong to [term] and the ones that
+ * do not.
+ *
+ * Split out as a pure function because the rule is the whole safety property and it is the part
+ * that can be tested without a database: the notice text states a month and a day, the caller
+ * supplies the year, and the UI always supplies the CURRENT year. Pasting last year's notice
+ * therefore parses perfectly and, without this check, marks this year's real teaching days as
+ * holidays — suppressing the classes taught on them. Anything more than a week outside the term
+ * is another year's business, not this term's 调休.
+ *
+ * With no term to check against, nothing can be validated, so everything is accepted: refusing
+ * dates because the semester is unknown would be a worse failure than writing them.
+ */
+internal fun List<DayAdjustment>.insideTerm(
+    term: TermCalendar?,
+): Pair<List<DayAdjustment>, List<DayAdjustment>> {
+    if (term == null) return this to emptyList()
+    val from = term.firstWeekStart.minusDays(NOTICE_RANGE_SLACK_DAYS)
+    val to = term.endDate.plusDays(NOTICE_RANGE_SLACK_DAYS)
+    return partition { !it.date.isBefore(from) && !it.date.isAfter(to) }
+}

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -85,6 +86,11 @@ fun AdjustmentScreen(
 
     Scaffold(
         containerColor = gh.canvasDefault,
+        // Same reason as 设置: the bottom bar (in MainActivity) and PageHeader already own
+        // the bottom / top insets, so Scaffold's default `systemBars` would add the
+        // navigation bar's height again as a dead band above the bar. On this page it also
+        // pushed the no-term message visibly off centre.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             // Same header component, same 64dp, same 16dp inset as 课表 and 设置.

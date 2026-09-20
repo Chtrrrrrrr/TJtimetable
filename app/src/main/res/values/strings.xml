@@ -36,5 +36,4 @@
     <string name="reminder_channel_description">在每节课开始前提醒</string>
     <string name="reminder_now">该上课了：%1$s</string>
     <string name="reminder_soon">%1$d 分钟后上课：%2$s</string>
-    <string name="reminder_permission_needed">需要通知权限才能发送上课提醒</string>
 </resources>

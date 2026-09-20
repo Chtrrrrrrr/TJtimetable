@@ -514,6 +514,65 @@ class TimetableIcsTest {
     }
 
     @Test
+    fun `parse reads a DTSTART with a numeric UTC offset`() {
+        // RFC 5545 allows `20250303T080000+0800`, and generators that mean "08:00 in Beijing"
+        // really do write it. The offset is discarded rather than applied, for the same reason
+        // `Z` is: a timetable is wall-clock. Before this was handled, the stamp matched none of
+        // the fixed-length branches and `LocalDateTime.parse` threw, so EVERY date in such a
+        // file came back null and the whole import was reported as "no identifiable event".
+        val ics = foreign(
+            "DTSTART:20250303T080000+0800",
+            "DTEND:20250303T093500+0800",
+            "SUMMARY:线性代数",
+        )
+        val parsed = TimetableIcs.parse(ics, TERM)!!
+
+        val back = parsed.sessionsByCourse.getValue(0).single()
+        assertEquals(DayOfWeek.MONDAY, back.dayOfWeek)
+        assertEquals(WeekPattern.of(3), back.weeks)
+        // 08:00–09:35 is exactly 1-2 节, and with the offset dropped the clock times are
+        // untouched — no 8-hour shift.
+        assertEquals(1, back.startUnit)
+        assertEquals(2, back.endUnit)
+    }
+
+    @Test
+    fun `parse reads the extended ISO form with a colon offset`() {
+        // The same value in the other legal spelling. This one used to take the
+        // `contains('-')` branch and die inside `LocalDateTime.parse`.
+        val ics = foreign(
+            "DTSTART:2025-03-03T08:00:00+08:00",
+            "DTEND:2025-03-03T09:35:00+08:00",
+            "SUMMARY:大学英语",
+        )
+        val parsed = TimetableIcs.parse(ics, TERM)!!
+
+        val back = parsed.sessionsByCourse.getValue(0).single()
+        assertEquals(DayOfWeek.MONDAY, back.dayOfWeek)
+        assertEquals(WeekPattern.of(3), back.weeks)
+        assertEquals(1, back.startUnit)
+        assertEquals(2, back.endUnit)
+    }
+
+    @Test
+    fun `parse reads a negative offset without losing the date`() {
+        // The offset carries a '-', so a naive `contains('-')` check would send this into the
+        // extended-ISO branch even though the rest of the stamp is the compact form.
+        val ics = foreign(
+            "DTSTART:20250303T080000-0500",
+            "DTEND:20250303T093500-0500",
+            "SUMMARY:体育",
+        )
+        val parsed = TimetableIcs.parse(ics, TERM)!!
+
+        val back = parsed.sessionsByCourse.getValue(0).single()
+        assertEquals(DayOfWeek.MONDAY, back.dayOfWeek)
+        assertEquals(WeekPattern.of(3), back.weeks)
+        assertEquals(1, back.startUnit)
+        assertEquals(2, back.endUnit)
+    }
+
+    @Test
     fun `parse reads a DTSTART with a TZID parameter`() {
         val ics = foreign(
             "DTSTART;TZID=Asia/Shanghai:20250303T100000",

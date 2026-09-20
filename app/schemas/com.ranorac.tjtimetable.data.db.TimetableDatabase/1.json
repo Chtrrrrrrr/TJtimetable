@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "8a896651781edc387c4d4eb41cecec3a",
+    "identityHash": "ef58e1ce071f56c55b0143298bb4e008",
     "entities": [
       {
         "tableName": "terms",
@@ -326,18 +326,18 @@
       },
       {
         "tableName": "day_adjustments",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`epochDay` INTEGER NOT NULL, `termId` TEXT NOT NULL, `kindCode` TEXT NOT NULL, `followsWeekday` INTEGER, `noClasses` INTEGER NOT NULL, `sourceName` TEXT NOT NULL, `note` TEXT, PRIMARY KEY(`epochDay`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`termId` TEXT NOT NULL, `epochDay` INTEGER NOT NULL, `kindCode` TEXT NOT NULL, `followsWeekday` INTEGER, `noClasses` INTEGER NOT NULL, `sourceName` TEXT NOT NULL, `note` TEXT, PRIMARY KEY(`termId`, `epochDay`))",
         "fields": [
-          {
-            "fieldPath": "epochDay",
-            "columnName": "epochDay",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
           {
             "fieldPath": "termId",
             "columnName": "termId",
             "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "epochDay",
+            "columnName": "epochDay",
+            "affinity": "INTEGER",
             "notNull": true
           },
           {
@@ -374,6 +374,7 @@
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
+            "termId",
             "epochDay"
           ]
         },
@@ -384,7 +385,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8a896651781edc387c4d4eb41cecec3a')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ef58e1ce071f56c55b0143298bb4e008')"
     ]
   }
 }

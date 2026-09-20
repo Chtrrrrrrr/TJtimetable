@@ -456,9 +456,11 @@ internal data class CalendarEventSpec(
  *  2. Dates the session does not actually teach — 节假日, 寒暑假, 停课 — become `EXDATE`s.
  *     The calendar app expands the rule on its own and would otherwise resurrect every
  *     class the grid hides.
- *  3. With that bookkeeping the recurring event reproduces the occurrence list exactly,
- *     so any occurrence left over is a 补课 that landed on a different weekday and must
- *     be written as its own single event.
+ *  3. With that bookkeeping the recurring events reproduce the occurrence list exactly, so
+ *     every occurrence left over is one that landed on a different date — a 补课 — and is
+ *     written as its own single event. Matching is by DATE rather than by week, so a 补课
+ *     inside a week whose nominal date is *still* taught produces both the rule and the
+ *     standalone row. Keying by week used to lose that class from the calendar entirely.
  *
  * @param occurrences occurrences belonging to [session] only; the caller groups them.
  * @param reminderMinutes lead time for the reminder, or negative to write none.
@@ -483,28 +485,33 @@ internal fun buildEventSpecs(
     val weeks = effectiveWeeks(session, term)
     if (weeks.isEmpty) return emptyList()
 
-    val byWeek = occurrences.associateBy { it.week }
+    // Keyed by DATE, not by week. Two independent defects came from keying by week:
+    //
+    //  1. A 补课日 puts two occurrences in one teaching week — the nominal one and the day it
+    //     was actually moved to — and `associateBy { it.week }` silently kept only one of them.
+    //  2. Worse, when the *makeup* one survived, the loop below marked its date as accounted
+    //     for by the rule (so the standalone pass skipped it) and simultaneously EXDATE'd the
+    //     nominal date. The class then existed in neither form: on the timetable grid but
+    //     nowhere in the student's calendar. Real case: 放假 5月1–5日 with 5月9日（周六）补周二的课
+    //     — 5月5日 is a holiday and 5月9日 is in the same Mon–Sun week.
+    val occurrenceByDate = occurrences.associateBy { it.date }
+    // Dates the recurring rules have already accounted for, so the standalone pass below emits
+    // only what no rule covers.
+    val coveredDates = HashSet<LocalDate>(occurrences.size)
     val out = ArrayList<CalendarEventSpec>()
 
     for (run in weeks.ranges()) {
         val rec = buildRecurrence(session, run, term, adjustments) ?: continue
 
-        // The rule generates one slot per week of the run; look each up by week number so
-        // a 补课 that moved the class to another weekday is still recognised as taught.
-        val taughtDates = HashSet<LocalDate>(rec.generatedDates.size)
+        // The rule generates one slot per week of the run; look each up by its DATE. A week the
+        // session does not teach has no occurrence, so the calendar app would draw a class the
+        // grid hides and it has to be excluded by name.
         val cancelled = ArrayList<LocalDate>()
-        for ((week, ruleDate) in rec.generatedDates) {
-            val occurrence = byWeek[week]
-            if (occurrence == null) {
-                // The session is silent this week (节假日, 寒暑假, 停课): the calendar app
-                // would happily draw it anyway, so it has to be excluded by name.
+        for ((_, ruleDate) in rec.generatedDates) {
+            if (occurrenceByDate[ruleDate] == null) {
                 cancelled.add(ruleDate)
             } else {
-                taughtDates.add(occurrence.date)
-                if (occurrence.date != ruleDate) {
-                    // Taught, but moved to another day of the week — a standalone 补课.
-                    cancelled.add(ruleDate)
-                }
+                coveredDates.add(ruleDate)
             }
         }
 
@@ -526,14 +533,14 @@ internal fun buildEventSpecs(
             reminderMinutes = reminderMinutes,
             colorIndex = course.effectiveColorIndex,
         )
+    }
 
-        // Everything this run did not account for: a 补课 on another weekday, or a class
-        // the school moved into a week the run does not cover.
-        for (occ in occurrences) {
-            if (occ.date in taughtDates) continue
-            if (term.weekOf(occ.date) !in run) continue
-            out += standaloneSpec(occ, startTime, endTime, zone, reminderMinutes, course, session)
-        }
+    // Everything no rule accounted for: a 补课 on another weekday, or a class the school moved
+    // into a week the runs do not cover. Deliberately OUTSIDE the run loop — inside it, an
+    // occurrence could be emitted once per run.
+    for (occ in occurrences) {
+        if (occ.date in coveredDates) continue
+        out += standaloneSpec(occ, startTime, endTime, zone, reminderMinutes, course, session)
     }
     return out
 }

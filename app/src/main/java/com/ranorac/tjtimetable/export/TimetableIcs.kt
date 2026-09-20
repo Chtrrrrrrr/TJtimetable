@@ -1184,7 +1184,15 @@ private fun fieldOf(description: String?, key: String): String? {
 private fun parseStamp(raw: String?): IcsStamp? {
     var value = raw?.trim().orEmpty()
     if (value.isEmpty()) return null
+    // `Z` is dropped rather than converted, on purpose — see the KDoc above: the app writes
+    // wall-clock times and a student reading "08:00" must be in class at 08:00 local.
     if (value.endsWith("Z") || value.endsWith("z")) value = value.dropLast(1)
+    // An explicit numeric offset is dropped for the same reason. This is not cosmetic: a
+    // generator that writes `20250407T080000+0800` (or the extended `2025-04-07T08:00:00+08:00`)
+    // would otherwise hit neither the fixed-length branches nor `LocalDateTime.parse`, and
+    // EVERY date-bearing property would come back null — the whole file would be reported as
+    // "no identifiable event" and nothing at all would import.
+    value = NUMERIC_OFFSET.replace(value, "")
     val dot = value.indexOf('.')
     if (dot > 0) value = value.substring(0, dot)
     if (value.isEmpty()) return null
@@ -1249,6 +1257,13 @@ private fun parseDuration(raw: String): Duration? {
 }
 
 private val DURATION_PART = Regex("(\\d+)([HMS])")
+
+/**
+ * A trailing numeric UTC offset: `+0800`, `-0500`, `+08:00`, `-05:00`.
+ *
+ * Matched and discarded rather than applied, consistent with dropping `Z` — see [parseStamp].
+ */
+private val NUMERIC_OFFSET = Regex("[+-]\\d{2}:?\\d{2}$")
 
 /** Parses the keys of an `RRULE` this app maps onto teaching weeks. */
 private fun parseRule(raw: String): RawRule? {

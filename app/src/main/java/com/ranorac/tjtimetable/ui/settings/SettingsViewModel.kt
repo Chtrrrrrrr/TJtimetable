@@ -23,7 +23,17 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class SettingsUiState(
-    val credentials: Credentials = Credentials(),
+    /**
+     * The stored credentials, or `null` while they have not been read yet.
+     *
+     * Nullable on purpose, and the nullability is load-bearing: the initial value of
+     * [SettingsViewModel.uiState] is emitted *before* DataStore has produced anything, so a
+     * non-null default would be indistinguishable from "the student has saved nothing".
+     * The settings screen seeds its text fields from this value, and if it seeded from an
+     * empty default it would latch the empty strings — rendering blank fields over saved
+     * credentials and, if 保存 was then pressed, overwriting them with "".
+     */
+    val credentials: Credentials? = null,
     val settings: AppSettings = AppSettings(),
     val busy: Boolean = false,
     /** The device calendars offered by the picker; empty until it has been opened. */

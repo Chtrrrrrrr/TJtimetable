@@ -134,18 +134,23 @@ class AdjustmentViewModel(
     /**
      * Drops the manual override and re-derives the date from the 校历.
      *
-     * Clearing alone is not enough: the manual row was overwriting the derived
-     * one, and [TimetableRepository.refreshAdjustments] skips any date that still
-     * has a manual row — so the refresh has to run after the delete.
+     * The work is done by [TimetableRepository.restoreDerivedAdjustment] rather than by a
+     * clear-then-refresh pair here, because that pair is not safe in either order: the
+     * refresh skips any date that still holds a MANUAL row, and a date left with no row at
+     * all falls through to "run its own weekday" — which turns a 节假日 back into a teaching
+     * day. If the 校历 cannot be read, nothing is changed and the student is told.
      */
     fun resetToAuto(date: LocalDate) {
         val term = uiState.value.term ?: return
         viewModelScope.launch {
             busy.value = true
-            repository.clearAdjustment(term.calendarId, date)
-            repository.refreshAdjustments(term)
+            val restored = repository.restoreDerivedAdjustment(term.calendarId, date)
             busy.value = false
-            message.value = "已恢复为校历自动判断"
+            message.value = if (restored) {
+                "已恢复为校历自动判断"
+            } else {
+                "校历暂时读不到（网络问题），这一天仍保持手动设置，请稍后重试"
+            }
         }
     }
 
@@ -155,8 +160,11 @@ class AdjustmentViewModel(
             busy.value = true
             val count = repository.refreshAdjustments(term)
             busy.value = false
-            message.value =
-                if (count > 0) "已从校历更新（$count 天有特殊安排）" else "校历暂无可更新数据"
+            message.value = when {
+                count == null -> "校历读取失败，请检查网络后重试"
+                count > 0 -> "已从校历更新（$count 天有特殊安排）"
+                else -> "校历暂无可更新数据"
+            }
         }
     }
 
@@ -170,10 +178,19 @@ class AdjustmentViewModel(
         val term = uiState.value.term ?: return
         viewModelScope.launch {
             busy.value = true
-            val count = repository.applyNotice(term.calendarId, text, year)
+            var rejected = 0
+            val count = repository.applyNotice(term.calendarId, text, year) { rejected = it }
             busy.value = false
-            message.value =
-                if (count > 0) "已根据通知设置 $count 天调休安排" else "未能从文本中识别出调休安排"
+            message.value = when {
+                // Reported first: a notice for another year parses perfectly and would
+                // otherwise look like a success while having changed nothing.
+                rejected > 0 && count == 0 ->
+                    "通知里有 $rejected 个日期不在本学期（$year 年？），已忽略"
+                rejected > 0 ->
+                    "已根据通知设置 $count 天调休安排；另有 $rejected 个日期不在本学期，已忽略"
+                count > 0 -> "已根据通知设置 $count 天调休安排"
+                else -> "未能从文本中识别出调休安排"
+            }
         }
     }
 

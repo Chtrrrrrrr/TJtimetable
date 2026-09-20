@@ -1,6 +1,8 @@
 package com.ranorac.tjtimetable.ui
 
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollToNodeAction
@@ -82,33 +84,39 @@ class OtherScreensRenderTest {
         ),
     ) {
         compose.setContent {
-            TJTimetableTheme {
-                SettingsScreen(
-                    state = state,
-                    onSaveCredentials = { _, _, _, _ -> },
-                    onImport = {},
-                    onRegisterCalendar = {},
-                    onThemeChange = {},
-                    onShowOddEven = {},
-                    onDimInactive = {},
-                    onShowWeekend = {},
-                    onStartOnToday = {},
-                    onRemindersEnabled = {},
-                    onReminderLead = {},
-                    onImportIcs = {},
-                    onExportIcs = {},
-                    onOpenLogin = {},
-                    onImportPasted = {},
-                    onSignOut = {},
-                    onOpenCalendarPicker = {},
-                    onDismissCalendarPicker = {},
-                    onChooseCalendar = {},
-                    onCalendarScope = {},
-                    onRemoveFromCalendar = {},
-                    onConsumeMessage = {},
-                )
-            }
+            TJTimetableTheme { SettingsScreenBody(state) }
         }
+    }
+
+    @Composable
+    private fun SettingsScreenBody(
+        state: SettingsUiState,
+        onSave: (String, String, String, String) -> Unit = { _, _, _, _ -> },
+    ) {
+        SettingsScreen(
+            state = state,
+            onSaveCredentials = onSave,
+            onImport = {},
+            onRegisterCalendar = {},
+            onThemeChange = {},
+            onShowOddEven = {},
+            onDimInactive = {},
+            onShowWeekend = {},
+            onStartOnToday = {},
+            onRemindersEnabled = {},
+            onReminderLead = {},
+            onImportIcs = {},
+            onExportIcs = {},
+            onOpenLogin = {},
+            onImportPasted = {},
+            onSignOut = {},
+            onOpenCalendarPicker = {},
+            onDismissCalendarPicker = {},
+            onChooseCalendar = {},
+            onCalendarScope = {},
+            onRemoveFromCalendar = {},
+            onConsumeMessage = {},
+        )
     }
 
     @Test
@@ -181,6 +189,42 @@ class OtherScreensRenderTest {
         compose.onNodeWithText("我的日历").assertExists()
         compose.onNodeWithText("本地日历").assertExists()
         compose.onNodeWithText("账户：me@example.com").assertExists()
+    }
+
+    @Test
+    fun `settings screen seeds its credential fields once they have loaded`() {
+        // The real screen is fed by a StateFlow whose FIRST value is emitted before DataStore
+        // has answered, so `state.credentials` is null at that moment. This drives exactly that
+        // sequence, which the plain `renderSettings()` helper cannot: its initial state already
+        // carries credentials, so the old "seed from whatever is in the state" effect looked
+        // correct there while being wrong on every cold start.
+        //
+        // The bug it replaces was not cosmetic: the fields latched the empty placeholder, so a
+        // student saw blank boxes over saved credentials and, on pressing 保存, called
+        // saveClient("", "") and destroyed them.
+        val state = mutableStateOf(SettingsUiState(credentials = null, settings = AppSettings()))
+        compose.setContent {
+            TJTimetableTheme { SettingsScreenBody(state.value, onSave = { _, _, _, _ -> }) }
+        }
+
+        // While the credentials are still in flight the fields must be empty, not stale.
+        compose.onNodeWithText("demo").assertDoesNotExist()
+
+        // DataStore answers.
+        state.value = SettingsUiState(
+            credentials = Credentials(
+                clientId = "demo",
+                clientSecret = "shh",
+                userId = "1*****6",
+                userName = "张三",
+            ),
+            settings = AppSettings(),
+        )
+        compose.waitForIdle()
+
+        // The pending value is adopted, so 保存 writes back what was loaded rather than "".
+        compose.onNodeWithText("demo").assertExists()
+        compose.onNodeWithText("1*****6").assertExists()
     }
 
     // ------------------------------------------------------------ bottom bar

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -128,12 +129,18 @@ fun SettingsScreen(
     var pastedResponse by remember { mutableStateOf("") }
     var seeded by remember { mutableStateOf(false) }
 
-    LaunchedEffect(state.credentials.clientId, seeded) {
+    // Wait for a *loaded* value rather than an empty one. `state.credentials` is null
+    // until DataStore has produced its first emission, and the screen must not seed from
+    // the placeholder: doing so latches empty strings, shows blank fields over credentials
+    // that were saved, and lets 保存 overwrite them with "". Waiting also means the fields
+    // appear once, already filled, instead of flashing empty and then filling in.
+    LaunchedEffect(state.credentials) {
+        val loaded = state.credentials ?: return@LaunchedEffect
         if (!seeded) {
-            clientId = state.credentials.clientId
-            clientSecret = state.credentials.clientSecret
-            userId = state.credentials.userId
-            userName = state.credentials.userName.orEmpty()
+            clientId = loaded.clientId
+            clientSecret = loaded.clientSecret
+            userId = loaded.userId
+            userName = loaded.userName.orEmpty()
             seeded = true
         }
     }
@@ -169,6 +176,12 @@ fun SettingsScreen(
 
     Scaffold(
         containerColor = gh.canvasDefault,
+        // The bottom bar lives in MainActivity's Scaffold, which already accounts for the
+        // navigation-bar inset, and PageHeader applies the status-bar inset itself. Leaving
+        // Scaffold's default `systemBars` insets here would therefore add the navigation
+        // bar's height a SECOND time, as a dead band between the content and the bar — and
+        // only on this page and 调休, so the three pages visibly disagreed.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             // The shared header: 设置 / 调休与校历 / 第 N 周 all sit at the same height,
@@ -478,9 +491,12 @@ fun SettingsScreen(
                         onClick = onImport,
                     )
                 }
-                if (state.credentials.isTokenFresh()) {
+                // Nothing to say until the stored credentials have been read — showing
+                // "未登录" for the instant before DataStore answers would be a lie.
+                val credentials = state.credentials
+                if (credentials != null && credentials.isTokenFresh()) {
                     VGap()
-                    MutedText("登录状态有效" + (state.credentials.userName?.let { "（$it）" } ?: ""))
+                    MutedText("登录状态有效" + (credentials.userName?.let { "（$it）" } ?: ""))
                 }
             }
 
@@ -496,7 +512,9 @@ fun SettingsScreen(
                 VGap()
                 GitHubSecondaryButton(
                     text = "退出登录",
-                    enabled = state.credentials.hasToken || state.credentials.hasClient,
+                    // Same reason: while the credentials are still loading, neither the
+                    // existence nor the absence of a token is known yet.
+                    enabled = state.credentials?.let { it.hasToken || it.hasClient } == true,
                     onClick = onSignOut,
                 )
                 VGap()

@@ -547,6 +547,60 @@ class ReminderPlannerTest {
     }
 
     @Test
+    fun `the default window is wide enough to absorb a deferred worker`() {
+        // FIXED: the default window used to be 5 minutes. WorkManager's minimum interval is
+        // 15 minutes and it defers freely under Doze/app standby, so a run even slightly late
+        // found nothing due — and because the worker then arms the *next* reminder while
+        // `plan` never returns a past trigger, that class was never reminded about at all.
+        assertEquals(30L, ReminderPlanner.DEFAULT_DUE_WINDOW_MINUTES)
+        // The widening is what matters, not 30 as a magic number: the default window is now
+        // longer than any lead the UI offers, so a reminder is posted anywhere between its
+        // trigger and the start of the class. The old 5-minute default ended the window at
+        // 07:50 — 10 minutes before the 08:00 class the student's 15-minute lead asked about.
+        val late = ReminderPlanner.due(base, week1Mon.atTime(7, 52), 15)
+        assertEquals(listOf("高等数学"), namesOf(late))
+    }
+
+    @Test
+    fun `a deferred worker still posts a reminder that its lead has not yet outlived`() {
+        // The window's whole job: the trigger fired at 07:45, the worker ran 14 minutes late
+        // — an ordinary Doze / app-standby deferral — and the class has not started, so the
+        // reminder is still posted rather than silently dropped. The old 5-minute default
+        // gave up at 07:50 and, because the worker then arms the *next* reminder while `plan`
+        // never returns a past trigger, that class could never be reminded about again.
+        val late = ReminderPlanner.due(base, week1Mon.atTime(7, 59), 15)
+        assertEquals(listOf("高等数学"), namesOf(late))
+        assertEquals(listOf(week1Mon.atTime(7, 45)), late.map { it.triggerAt })
+        // A narrow window keeps its old meaning exactly: only the last `windowMinutes` count.
+        assertTrue(ReminderPlanner.due(base, week1Mon.atTime(7, 52), 15, windowMinutes = 5).isEmpty())
+        assertEquals(1, ReminderPlanner.due(base, week1Mon.atTime(7, 50), 15, windowMinutes = 5).size)
+    }
+
+    @Test
+    fun `the window never outlives the class it is about`() {
+        // A 24h lead puts 高等数学's trigger on Sunday 08:00; on Monday 08:30 the class is
+        // already half over, so no window — however wide — may post it. Without this bound a
+        // generous window would turn into a burst of notifications for classes already
+        // attended, which is the opposite failure to the one the wider default fixes.
+        val wide = ReminderPlanner.due(base, week1Mon.atTime(8, 30), 15, windowMinutes = 10_000)
+        assertTrue(wide.isEmpty())
+
+        // One minute before the class it is still a reminder, not a report.
+        val justInTime = ReminderPlanner.due(base, week1Mon.atTime(7, 59), 15, windowMinutes = 10_000)
+        assertEquals(listOf("高等数学"), namesOf(justInTime))
+        // At 08:00 the class is starting; the reminder is at its last allowed instant.
+        assertEquals(1, ReminderPlanner.due(base, week1Mon.atTime(8, 0), 15, windowMinutes = 10_000).size)
+        // One minute later the lecture is under way, so however wide the window is it stops.
+        assertTrue(ReminderPlanner.due(base, week1Mon.atTime(8, 1), 15, windowMinutes = 10_000).isEmpty())
+
+        // 准点 mode is bounded by the class itself: the trigger IS 08:00, so the reminder fires
+        // at that instant and no later. It is the lead, not the window, that decides how much
+        // warning the student gets.
+        assertEquals(1, ReminderPlanner.due(base, week1Mon.atTime(8, 0), 0, windowMinutes = 10_000).size)
+        assertTrue(ReminderPlanner.due(base, week1Mon.atTime(8, 1), 0, windowMinutes = 10_000).isEmpty())
+    }
+
+    @Test
     fun `a reminder still in the future is not due`() {
         assertTrue(ReminderPlanner.due(base, mondayEarly, 15).isEmpty())
         assertTrue(ReminderPlanner.due(base, week1Mon.atTime(7, 44), 15).isEmpty())
@@ -634,27 +688,43 @@ class ReminderPlannerTest {
             .single { it.occurrence.date == week1Thu }
         assertEquals(week1Wed.atTime(13, 30), planned.triggerAt)
         assertTrue(planned.triggerAt.isAfter(now))
-        // Nothing on or after 03-04 is reachable by `due` at this instant: today holds
-        // only the 08:00 class, whose own trigger is already 15 minutes old.
-        assertTrue(ReminderPlanner.due(base, now, 15).isEmpty())
+        // Nothing on or after 03-04 is reachable by `due` at this instant: today holds only
+        // the 08:00 class, and five minutes after it began no window — the default one
+        // included — may still post its reminder.
+        assertTrue(ReminderPlanner.due(base, now.plusMinutes(5), 15).isEmpty())
         assertTrue(ReminderPlanner.due(base, now.plusHours(3), 15).isEmpty())
     }
 
     @Test
-    fun `a wide window reports every reminder inside it in trigger order`() {
-        // 03-04 16:00 with the ordinary 15 minute lead: 大学英语 triggered today at 09:45
-        // and 体育 at 15:15, both inside a 400 minute window.
-        val now = week1Wed.atTime(16, 0)
-        val due = ReminderPlanner.due(base, now, 15, windowMinutes = 400)
-        assertEquals(listOf("大学英语", "体育"), namesOf(due))
-        assertEquals(listOf(week1Wed.atTime(9, 45), week1Wed.atTime(15, 15)), due.map { it.triggerAt })
-        assertTrue(due.all { it.occurrence.date == week1Wed })
-        assertTrue(due.none { it.triggerAt.isAfter(now) })
+    fun `a wide window reports every reminder still worth posting, in trigger order`() {
+        // The reason the window exists, isolated from the lead: 大学英语 starts at 10:00 and
+        // the student asked for a 90-minute lead, so its trigger is 08:30. A worker deferred
+        // to 09:40 must still post it — that is a reminder with 20 minutes to spare, and the
+        // old 5-minute window would have thrown the class away for good.
+        val late = ReminderPlanner.due(base, week1Wed.atTime(9, 40), 90, windowMinutes = 70)
+        assertEquals(listOf("大学英语"), namesOf(late))
+        assertEquals(listOf(week1Wed.atTime(8, 30)), late.map { it.triggerAt })
+
+        // The old 5-minute default on the very same deferral: gone, permanently.
+        assertTrue(ReminderPlanner.due(base, week1Wed.atTime(9, 40), 90, windowMinutes = 5).isEmpty())
+
+        // A trickle of delay is caught by a window of the old size too, which is what shows
+        // the wider default buys robustness rather than changing the rule.
+        assertEquals(1, ReminderPlanner.due(base, week1Wed.atTime(8, 34), 90, windowMinutes = 5).size)
+        assertEquals(1, ReminderPlanner.due(base, week1Wed.atTime(8, 34), 90).size)
+
+        // The one-minute mark that matters: past the class start nothing is posted, however
+        // wide the window is made. 大学英语 has begun at 10:01...
+        assertTrue(ReminderPlanner.due(base, week1Wed.atTime(10, 1), 90, windowMinutes = 400).isEmpty())
+        // ... and 体育, whose trigger is 15:15 with a 15-minute lead, stops at 15:31.
+        assertEquals(1, ReminderPlanner.due(base, week1Wed.atTime(15, 29), 15, windowMinutes = 400).size)
+        assertTrue(ReminderPlanner.due(base, week1Wed.atTime(15, 31), 15, windowMinutes = 400).isEmpty())
+
         // Tomorrow's 大学物理 IS scanned, but with a 15 minute lead its trigger is 03-05
         // 13:15 — still in the future — so it is scheduled and simply not due yet.
-        assertTrue(due.none { it.occurrence.date == week1Thu })
+        assertTrue(late.none { it.occurrence.date == week1Thu })
         assertTrue(
-            planOf(now = now, horizonDays = 2)
+            planOf(now = week1Wed.atTime(9, 40), horizonDays = 2)
                 .any { it.occurrence.date == week1Thu && it.triggerAt == week1Thu.atTime(13, 15) },
         )
     }

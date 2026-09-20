@@ -101,7 +101,9 @@ class TimetableWidget : GlanceAppWidget() {
         val appContext = context.applicationContext
         try {
             // 先读库再渲染，避免有课表的同学第一次看到空状态。
-            writeWidgetState(appContext, id, buildPayload(appContext))
+            // buildPayload 返回 null 表示这次读库失败：不写 state，保留上一次的内容，
+            // 否则一次瞬时故障就会把小组件覆盖成「还没有课表」，最多挂 30 分钟。
+            buildPayload(appContext)?.let { writeWidgetState(appContext, id, it) }
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (error: Throwable) {
@@ -141,11 +143,12 @@ class TimetableWidget : GlanceAppWidget() {
         }
 
         private suspend fun refreshAll(context: Context) {
+            // null = 读库失败，保留每个小组件已有的 state（并沿用其内容重画）。
             val payload = buildPayload(context)
             val widget = TimetableWidget()
             val ids = GlanceAppWidgetManager(context).getGlanceIds(TimetableWidget::class.java)
             for (id in ids) {
-                writeWidgetState(context, id, payload)
+                if (payload != null) writeWidgetState(context, id, payload)
                 widget.update(context, id)
             }
         }
@@ -188,8 +191,11 @@ class TimetableRefreshAction : ActionCallback {
     ) {
         val appContext = context.applicationContext
         try {
-            writeWidgetState(appContext, glanceId, buildPayload(appContext))
-            TimetableWidget().update(appContext, glanceId)
+            // 同 provideGlance：读库失败时不动已存的内容。
+            buildPayload(appContext)?.let {
+                writeWidgetState(appContext, glanceId, it)
+                TimetableWidget().update(appContext, glanceId)
+            }
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (error: Throwable) {
@@ -368,21 +374,54 @@ private val CardRadius = 18.dp
 
 // --------------------------------------------------------------- 读取与计算
 
-/** 读当前课表；未导入（null）或读库失败都返回 null，由调用方决定画什么。 */
-private suspend fun loadTimetable(context: Context): Timetable? {
-    val application = context.applicationContext as? TjApplication ?: return null
+/** 读当前课表的结果，区分「没有课表」与「读失败」——两者要画的东西完全不同。 */
+private sealed interface TimetableRead {
+    /** 读到了（可能是一个空学期）。 */
+    data class Ok(val timetable: Timetable) : TimetableRead
+
+    /** 确实没有当前学期：学生还没导入。 */
+    data object NoTimetable : TimetableRead
+
+    /** 读库本身失败，例如数据库打不开；调用方必须沿用上一次的内容。 */
+    data class Failed(val error: Throwable) : TimetableRead
+}
+
+/**
+ * 读当前课表。
+ *
+ * 三种结局必须分开：早期版本把「读失败」也返回 null，于是 [buildPayload] 会把它
+ * 写成「未导入课表」空状态，把上一次画好的内容覆盖掉——正是下面注释里说要避免的事，
+ * 而 `provideGlance` 的 try/catch 永远不会触发，因为没有异常抛出。
+ */
+private suspend fun loadTimetable(context: Context): TimetableRead {
+    val application = context.applicationContext as? TjApplication
+        ?: return TimetableRead.Failed(IllegalStateException("application is not TjApplication"))
     return try {
-        application.container.repository.observeTimetable().first()
+        when (val timetable = application.container.repository.observeTimetable().first()) {
+            null -> TimetableRead.NoTimetable
+            else -> TimetableRead.Ok(timetable)
+        }
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (error: Throwable) {
         Log.w(TAG, "读取课表失败", error)
-        null
+        TimetableRead.Failed(error)
     }
 }
 
-private suspend fun buildPayload(context: Context): WidgetPayload {
-    val timetable = loadTimetable(context) ?: return notImportedPayload(context)
+/**
+ * 组装要写进小组件 preferences 的内容。
+ *
+ * 读库失败时返回 null，调用方跳过写入：宁可继续显示上一次的快照，也不要让小组件
+ * 因为一次瞬时故障变成「还没有课表」——`updatePeriodMillis` 的最小值是 30 分钟，
+ * 那个错误状态会挂满整个间隔。
+ */
+private suspend fun buildPayload(context: Context): WidgetPayload? {
+    val timetable = when (val read = loadTimetable(context)) {
+        is TimetableRead.Failed -> return null
+        TimetableRead.NoTimetable -> return notImportedPayload(context)
+        is TimetableRead.Ok -> read.timetable
+    }
     // 学期存在但一门课都没有：大多是导入没跑完，或者选的学期是空的。
     if (timetable.sessions.isEmpty()) return emptyTermPayload(context)
 

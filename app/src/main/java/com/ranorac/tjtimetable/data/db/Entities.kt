@@ -104,12 +104,23 @@ data class SessionEntity(
  * The three sources are still distinguished by [sourceName], because they have
  * different lifetimes: on refresh the API and inferred rows are replaced, while
  * MANUAL rows are the student's own edits and are never overwritten.
+ *
+ * **The key is `(termId, epochDay)`, not `epochDay` alone.** The rows are written with
+ * `OnConflictStrategy.REPLACE` and read with a `termId` filter, so an `epochDay`-only key
+ * meant a write for one semester deleted another's row for the same calendar date — and the
+ * other semester could never recover it, because a refresh only rewrites rows it can still
+ * see. Two terms overlapping in time is not exotic: the open-platform import and a captured
+ * 教务 response use different calendar ids, an `.ics` falls back to `"ics"`, and a summer
+ * term overlaps the autumn one.
  */
-@Entity(tableName = "day_adjustments")
+@Entity(
+    tableName = "day_adjustments",
+    primaryKeys = ["termId", "epochDay"],
+)
 data class DayAdjustmentEntity(
-    /** `LocalDate.toEpochDay()`. */
-    @PrimaryKey val epochDay: Long,
     val termId: String,
+    /** `LocalDate.toEpochDay()`. */
+    val epochDay: Long,
     /** [com.ranorac.tjtimetable.domain.CalendarDayKind.apiCode], or "" for unknown. */
     val kindCode: String,
     /** `DayOfWeek.value` whose timetable runs, or null for "its own weekday". */

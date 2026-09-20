@@ -182,7 +182,7 @@ fun TimetableScreen(
                     val days = weekdayColumns(
                         showWeekend = state.settings.showWeekend,
                         startOnToday = state.settings.startOnToday,
-                        today = remember { LocalDate.now() },
+                        today = state.today,
                     )
                     val schedule = timetable.periodSchedule ?: PeriodSchedule.TONGJI
                     // One animation over the WHOLE week page — the date row and the grid
@@ -238,6 +238,10 @@ fun TimetableScreen(
                             timetable = timetable,
                             schedule = schedule,
                             days = days,
+                            // Passed down rather than re-read with LocalDate.now(): a
+                            // `remember`ed date never rolls over, so a resumed app highlighted
+                            // yesterday's column all morning.
+                            today = state.today,
                             includeInactive = state.settings.dimInactiveCourses,
                             onCourseClick = onCourseClick,
                         )
@@ -334,9 +338,10 @@ private fun WeekdayHeader(
     days: List<DayOfWeek>,
     /** Same width the grid uses, so the dates stay over their own columns on any screen. */
     gutterWidth: Dp,
+    /** Today, from the UI state, so the dot follows the date across a midnight roll-over. */
+    today: LocalDate,
 ) {
     val gh = LocalGitHubColors.current
-    val today = remember { LocalDate.now() }
 
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
         Spacer(Modifier.width(gutterWidth))
@@ -400,11 +405,11 @@ private fun WeekPage(
     timetable: Timetable,
     schedule: PeriodSchedule,
     days: List<DayOfWeek>,
+    today: LocalDate,
     includeInactive: Boolean,
     onCourseClick: (ClassOccurrence) -> Unit,
 ) {
     val gh = LocalGitHubColors.current
-    val today = remember { LocalDate.now() }
     val maxUnit = schedule.maxUnit
 
     val occurrences = remember(timetable, week, includeInactive) {
@@ -437,7 +442,7 @@ private fun WeekPage(
             .coerceIn(MIN_GUTTER_WIDTH, MAX_GUTTER_WIDTH)
 
         Column(Modifier.fillMaxSize()) {
-            WeekdayHeader(term = term, week = week, days = days, gutterWidth = gutterWidth)
+            WeekdayHeader(term = term, week = week, days = days, gutterWidth = gutterWidth, today = today)
 
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 // All 11 节 fit instead of assuming a fixed 58dp row and scrolling past the

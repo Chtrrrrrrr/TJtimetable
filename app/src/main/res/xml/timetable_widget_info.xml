@@ -12,8 +12,13 @@
   updatePeriodMillis 为 30 分钟——系统允许的最小值。它只负责“重新渲染”，真正的
   数据读取由 TimetableWidget.refresh() 完成（见 TimetableWidgetReceiver.onUpdate），
   因为“正在进行/下一节”依赖当前时间，必须整体重画。
+
+  tools:ignore="UnusedAttribute"：targetCellWidth/targetCellHeight 是刻意保留的向下兼容
+  属性——minSdk 26 以下的系统会忽略它们，文档（第 6 行）也这么写明。lint 的提醒本身没错，
+  但把它留着只会让每次构建都有噪音，所以在这里显式声明“这是有意的”。
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:description="@string/widget_timetable_description"
     android:initialLayout="@layout/glance_default_loading_layout"
     android:minHeight="40dp"
@@ -24,4 +29,5 @@
     android:targetCellHeight="2"
     android:targetCellWidth="2"
     android:updatePeriodMillis="1800000"
-    android:widgetCategory="home_screen" />
+    android:widgetCategory="home_screen"
+    tools:ignore="UnusedAttribute" />

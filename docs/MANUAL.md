@@ -9,7 +9,7 @@
 
 | 模块 | 状态 |
 |---|---|
-| 周次解析（单双周 / 多段周次 / 各类书写格式） | ✅ 完成，**512 项单元测试全部通过** |
+| 周次解析（单双周 / 多段周次 / 各类书写格式） | ✅ 完成，**540 项单元测试全部通过** |
 | 调休串休（校历类型 + 推测补课 + 公告文本解析 + **逐日编辑界面**） | ✅ 完成 |
 | 学期日历 ↔ 实际日期映射 | ✅ 完成 |
 | 同济开放平台 API 客户端（两种 OAuth2 模式） | ✅ 完成 |
@@ -27,22 +27,29 @@
 | 「从今天开始显示」课表列排序 | ✅ 完成 |
 | 上课提醒（应用内通知，WorkManager） | ✅ 完成，待真机确认 |
 | 日历文件（.ics）导入导出（**无需凭据**） | ✅ 完成，53 项测试；含单双周与调休往返 |
+| 教务抓取（内置浏览器旁观 + 响应体解析，**不接触口令**） | ✅ 完成；待真机确认 WebView 捕获 |
+| 课表数据一致性（界面 / 小组件 / 系统日历 / 提醒 同源） | ✅ 完成，由 `CalendarSyncLogicTest` 双向固定 |
 
-已实测可用：
+已实测可用（v2.2.1）：
 
 ```
 .\tools\dev\build.ps1                          → BUILD SUCCESSFUL
-.tools\dev\build.ps1 :app:testDebugUnitTest   → 512 tests, 0 failures, 0 errors, 0 skipped
-.\tools\dev\build.ps1 :app:lintDebug           → 0 errors, 6 warnings（均为既有告警）
+.tools\dev\build.ps1 :app:testDebugUnitTest   → 540 tests, 0 failures, 0 errors, 0 skipped
+.\tools\dev\build.ps1 :app:lintDebug           → 0 errors, 1 warning（见下）
 .\tools\dev\build.ps1 :app:assembleRelease     → BUILD SUCCESSFUL（R8 混淆通过）
 ```
+
+> lint 剩下的唯一一条告警是 `mipmap-anydpi-v26`「v26 限定符多余，minSdk 已是 26」。
+> 试过合并进 `mipmap-anydpi`：AAPT 直接报 `resource mipmap/ic_launcher not found`，
+> 因为旧式 `anydpi` 目录不是合法的自适应图标容器。这是工具的建议与打包器的要求相冲突，
+> 保留告警比隐藏它更诚实。
 
 产物：
 
 | 变体 | 大小 | 说明 |
 |---|---|---|
-| debug | 19.80 MiB | 包名 `com.ranorac.tjtimetable.debug`，minSdk 26 / targetSdk 35 |
-| release | 2.31 MiB | 未签名（无 keystore），R8 压缩约 88% |
+| debug | 19.49 MiB | 包名 `com.ranorac.tjtimetable.debug`，minSdk 26 / targetSdk 35 |
+| release | 2.42 MiB | 未签名（无 keystore），R8 压缩约 88% |
 
 release 构建通过值得注意：`mapping.txt` 中 API DTO 未被重命名，说明
 `proguard-rules.pro` 的 kotlinx.serialization 保留规则正确——这类规则写错通常只在
@@ -308,6 +315,12 @@ app/src/main/java/com/ranorac/tjtimetable/
   不必等之前武装的那一项排干。
 - **`due()` 用时间窗而不是精确时刻**。WorkManager 会因为 Doze、批处理而晚跑，
   没有时间窗就会**静默漏掉一节课**，而这是提醒功能唯一不能有的失败方式。
+  窗口的长度不是随便取的：它必须比「真实的延后量」长，否则等于没有窗口——
+  WorkManager 自身的最小间隔就是 15 分钟，所以 5 分钟的窗口只会在 worker 迟到时把课丢掉，
+  而丢掉之后**不可恢复**（worker 接着只武装下一个提醒，`plan()` 又永不返回过去的触发点）。
+  现在默认 30 分钟，并且以「这节的上课时刻」为硬上限：
+  触发点之上最多晚 `min(窗口, 距离上课还有多久)`，课上到一半再弹就不叫提醒了。
+  两个上限取更紧的那个，所以「准点」模式下窗口自动收敛到「上课那一刻」为止。
 
 提醒由 `TimetableResolver` 展开而来，因此节假日、补课日与单双周**自动被尊重**：
 某天不上课的课**不可能**产生提醒。通知开关同时反映系统通知权限是否真的开启，
@@ -440,8 +453,24 @@ Compose 渲染：`TimetableScreenRenderTest` 11 项、`OtherScreensRenderTest` 1
 - **课表网格的绘制与复用做了减法**：11 条节次横线 + 7 条分栏竖线原本是每列各画 12 个
   1dp `Box`（共 84 个布局节点），现在由 `drawBehind` 一次画完；每周的课程按星期分桶只算一次
   （此前是 7 次全量过滤 + 7 个新 List，新 List 还会让每列的 `remember` 失效）；
-  节次栏移到 `AnimatedContent` 之外（它不随周次变化，切周时不再重新排版 22 个标签）；
   课程块用 `key(session.id)` 复用节点，两周都上的课不会被拆掉重建。
+  > 更正：早期版本的本节曾写「节次栏移到 `AnimatedContent` 之外」，但代码里
+  > `PeriodGutter` 仍在 `WeekPage` 内、也就是仍在 `AnimatedContent` 之内。之所以没有真的
+  > 移出去：节次栏与七个日列**共用同一个 `ScrollState`**（那是刻意设计，见上），
+  > 把它提到 `AnimatedContent` 外面就必须把滚动状态也一起提上去，
+  > 代价大于「切周时少排版 11 行标签」的收益。文档已按实际代码改正。
+- **`today` 是随时间走的，不是组合时读一次**。课表页原本三处 `remember { LocalDate.now() }`，
+  而 `remember` 永远只算第一次。这个 App 的使用方式是「一直开着」（它就是首屏），
+  所以挂着过夜之后：今日高亮停在昨天、「从今天开始显示」的列顺序仍以昨天开头、
+  当前教学周也没滚到新的一周。现在 `TimetableViewModel` 里有一个每分钟发射一次的
+  `todayFlow`，与课表、设置一起 `combine` 进 UI state，界面只读 `state.today`。
+  频率取一分钟是刻意的：它远高于取值变化的频率，为的是让跨天**在正在看屏幕的时候就发生**，
+  而不是等下一次数据库或设置发射。
+- **小组件的读库结果分三态**。「没有学期」和「读库失败」必须分开：前者应当画出「还没有课表」，
+  后者应当**什么都不写**、让 preferences 里上一次的内容继续显示。
+  此前两者都返回 `null`，于是读库的瞬时故障会把小组件覆盖成空状态并挂满 30 分钟
+  （`updatePeriodMillis` 的最小值）——恰恰是该函数注释里写「读库失败不该让小组件变成错误占位」
+  想避免的事。
 
 ---
 
@@ -481,32 +510,39 @@ Compose 渲染：`TimetableScreenRenderTest` 11 项、`OtherScreensRenderTest` 1
 3. **数据库迁移**：已移除 `fallbackToDestructiveMigration`（它会静默清空学生的课表、
    配色、备注与手动调休）。代价是**每次 `version` 升级都必须自带真实 `Migration`**，
    否则开发期会直接抛错——这是刻意的取舍：宁可在开发时炸，也不要在用户手上丢数据。
-   当前仍是 version 1，尚无迁移需要。
-4. **网页抓取模块尚未实现**：方案已定（内置浏览器旁观，见第 9 条），
-   但需要一个真实响应体样例才能把解析器写成可测的，而不是靠猜字段名。
-5. **真机验证仍需你做**：APK 可构建、512 项测试全绿、lint 0 error，
+   当前仍是 version 1，尚无迁移需要（但见第 11 条的复合主键变更）。
+4. **真机验证仍需你做**：APK 可构建、540 项测试全绿、lint 0 error，
    **且界面已用 Robolectric + Compose 在 JVM 上真正渲染验证**（见下节）。
    仍需真机确认的是：小组件实际显示（含长按移动时不再露直角）、
    **日历写入你选中的那个日历**、上课提醒的实际送达、
    44dp 底栏、三行左栏与"老师/教室"两行在真实字号下的观感
    （自动断言只能证明"放得下"、证明不了"好看"），
    以及**抓取模块的 WebView 捕获**（涉及 `x-token` 请求头与 Cookie，只能在真机上跑）。
-6. **性能没有在真机上量化过**。调试包（`app-debug.apk`，20 MiB、无 R8、带调试工具）本身就比
+5. **性能没有在真机上量化过**。调试包（`app-debug.apk`，19 MiB、无 R8、带调试工具）本身就比
    发布包慢数倍，所以"滑动和切周卡顿"要用 `app-release-unsigned.apk` 签名后的包来判定：
    若发布包仍然卡，请连上 USB 调试后跑
    `adb shell dumpsys gfxinfo com.ranorac.tjtimetable framestats`，那里才有真实帧时间。
-7. **仅内置一份作息**：若某校区作息不同需在设置中调整（界面待做）。
-8. **周次无法解析时的兜底**：导入时若周次字段无法解析，会**按整学期**处理并在提示中说明，
+6. **仅内置一份作息**：若某校区作息不同需在设置中调整（界面待做）。
+7. **周次无法解析时的兜底**：导入时若周次字段无法解析，会**按整学期**处理并在提示中说明，
    宁可多显示也不静默丢课；但若手工构造出空周次的时段，该时段不会出现在任何有日期的视图中。
-9. **隐藏而非删除**：课程只能隐藏（`hidden = true`），没有彻底删除的入口。
+   解析顺序是 `weeks` 数组 → `weekNum` → `weekstr`（v2.2.1 起 `weekstr` 才真正参与解析，
+   此前它只被当成提示文案里的字段名）。
+8. **隐藏而非删除**：课程只能隐藏（`hidden = true`），没有彻底删除的入口。
    这是刻意的——教务导入会把删掉的课重新拉回来，所以「删除」会让人以为操作失败。
-10. **抓取采用「内置浏览器旁观」，不采用口令 POST 登录**：
+9. **抓取采用「内置浏览器旁观」，不采用口令 POST 登录**：
    1 系统的个人课表走 `POST /api/electionservice/student/{id}/getDataBk`，
    其中 `{id}` 是选课批次相关的内部 id，**无法稳定构造**；`studentCode` 还是前端加密的 uid。
    因此正确做法是：在内置浏览器里打开真实教务页面，让学生正常登录（统一身份认证、验证码、
    SSO 全由学校页面处理），应用**只旁观页面自己发出的那条课表响应**，
    **从头到尾不接触口令**。这一判断来自 `gzy31007/TJDesktopTimetable` 的实测结论。
    本模块会独立成包，出问题不影响已验证的课表/调休/小组件/日历/.ics 通路。
+10. **开放平台 v2 批量接口仍未被调用**：`TongjiApi.studentTimetableBatch` 与
+    `TongjiImport.fromBatch` 都已实现且有测试，但仓库只走 v1 实时接口，
+    所以「v1 挂了用 v2 兜底」目前只是代码能力，不是运行时行为。
+11. **`day_adjustments` 的主键在 v2.2.1 变成 `(termId, epochDay)`**：数据库仍停在
+    version 1 且从未发布过带旧主键的正式包，所以没有 `Migration`；但**如果**你的开发机上
+    装过 2.1.x 的调试包并直接用新版覆盖，Room 会因为 schema 不一致而抛错——卸载重装即可，
+    这不会影响任何真实用户（他们从未装过旧版本）。
 
 ---
 
@@ -541,3 +577,26 @@ Compose 渲染：`TimetableScreenRenderTest` 11 项、`OtherScreensRenderTest` 1
 
 其中前三项都会**静默给出错误的课表**，因此每次修复都补了回归测试并解除对应的
 `@Ignore`，确保同类问题不会复发。
+
+### v2.2.1 修正的缺陷
+
+这一轮先做了一次针对性的代码审计（Compose 层与数据/领域层各一遍），下面全部是审计中
+**在代码里核实过**、而不是推测出来的问题。挑选标准只有一条：会不会静默给出错误的课表、
+错误的日历，或者丢学生的数据。
+
+| 问题 | 原因 | 影响 |
+|---|---|---|
+| **冷启动后保存会清空凭据** | `SettingsUiState.credentials` 非空默认是「空凭据」，而 DataStore 的首次发射在 `stateIn` 初值之后；播种 effect 用 `!seeded` 判断，于是把空串锁死 | 设置页首次进入时 client_id / 密钥 / 学号显示为空，点「保存」即 `saveClient("", "")` **静默抹掉已保存的凭据**；离开再进这一页又「好了」，所以看起来像偶发 |
+| **系统日历漏掉补课** | `buildEventSpecs` 用 `associateBy { it.week }` 按**周**配对，而一个教学周里可以同时有「原定那天」和「补课那天」两条；存活下来的那条被记成「规则已覆盖」，原定日期又被 EXDATE 掉 | 这条课在网格上有、在系统日历里**两种形式都没有**（放假 5/1–5/5、5/9 补周二即是真实场景）→ 改为按**日期**配对；`CalendarSyncLogicTest` 新增「网格上的每一次课都必须在某个日历事件里」的端到端断言 |
+| **`day_adjustments` 主键漏了 termId** | 主键是 `epochDay` 单列、写入用 REPLACE、读取按 termId 过滤 | 两个学期只要日期重叠，B 学期的写入会**删掉 A 学期的调休行**，且 A 再也恢复不了 → 改为复合主键 `(termId, epochDay)` |
+| **「恢复自动」可能把节假日变回上课日** | `clearAdjustment` 先删行、`refreshAdjustments` 后刷新；刷新会跳过仍有 MANUAL 行的日期，网络一失败这天就**一行都没有**，而「没有行」回退到当天星期 | 学生看到「已恢复为校历自动判断」，实际那天开始上课 → 新增 `TimetableRepository.restoreDerivedAdjustment`，**先写回校历行再删手动行**；读不到校历则什么都不改并如实提示 |
+| **粘贴旧通知会把今年改成放假** | 公告文本只有月日，年份由调用方给，界面永远给 `LocalDate.now().year` | 粘贴去年的通知，今年**真实的上课日被标成节假日**，那天的课被静默压掉 → `applyNotice` 现在只接受 `[学期首周-7天, 学期末+7天]`，其余计数回报给界面 |
+| **提醒窗口 5 分钟太窄** | WorkManager 自己最小间隔就是 15 分钟，Doze / 应用待机下迟到十几分钟是常态 | 迟到即视为「没到期」，而 worker 接着只武装**下一个**提醒、`plan` 又永不返回过去的触发点 → 那节课**永远不会再提醒**。窗口改为 30 分钟，并以「上课时刻」为硬上限（课上到一半再弹不是提醒，是通知你迟到了） |
+| **跨天后仍显示昨天的日期** | 课表页三处 `remember { LocalDate.now() }`，ViewModel 里的 `today` 只在数据流发射时取样 | 挂着过夜的 App 第二天早上：今日高亮停在昨天、「从今天开始显示」仍以昨天开头、当前周也没跟上 → `today` 改为 ViewModel 里每分钟自增的 `Flow` 并随 UI state 下发 |
+| **小组件被瞬时读库失败清成空状态** | `loadTimetable` 把「没有学期」和「读库失败」都返回 `null`，`buildPayload` 无从区分 | 一次瞬时故障就把上一次画好的内容覆盖成「还没有课表」，最多挂满 30 分钟——正是该函数注释里说要避免的事 → 改为三态结果，失败时**不写 state** |
+| **设置页与调休页底栏上方多出一条空白** | 这两页的 `Scaffold` 保留默认 `systemBars`，而底栏在 MainActivity 里已经算过导航栏 inset | 空隙高度正好是一条导航栏（三键导航下约 48dp），且只有两页有，三页看起来又不一致了 → 两页都显式 `WindowInsets(0,0,0,0)` |
+| **两个不同课程同一时段的提醒互相覆盖** | 通知 id 是 `(epochDay % 100_000) * 100 + startUnit`，同一日期同一节完全相同 | 后一条 `notify` 顶掉前一条，两门课只看到一条提醒 → id 折入课程名（FNV-1a），并用 `NotificationIdTest` 固定住不碰撞 |
+| **带 UTC 偏移的 .ics 整个文件导不进来** | `parseStamp` 只剥 `Z`；`20250407T080000+0800` 长度不匹配任何分支，`2025-04-07T08:00:00+08:00` 则在 `LocalDateTime.parse` 抛错 | 每个日期属性都变成 null → 整个文件被判为「没有可识别的日程」，**一个课都导不进来** → 在剥 `Z` 之后同样丢弃数字偏移（保持挂钟语义） |
+| **只带 `weekstr` 的时段被当成整学期** | `fromApiFields(weeks, weekNum, null)` 第三个参数被写死成 `null`，而它正是 `weekstr` 的落点 | 服务端只在 `weekstr` 里给周次时，该时段被放宽到整学期 → 画出错误的周次并产生多余提醒 → 实参改为 `entry.weekstr` |
+| **登录页 WebView 从不销毁** | 没有 `DisposableEffect` / `onRelease`，`window.open` 弹窗也没有销毁路径 | WebView 持有 Activity context 与渲染进程，而这是主要导入通道、会被反复打开 → 关闭时 `destroy()`，弹窗在 `onCloseWindow` 销毁 |
+| 既有 lint 告警 | `SDK_INT < O` 检查（minSdk 已是 26，恒为假）、一个无引用的字符串资源 | 死代码让人误以为仍支持 O 之前；字符串资源白占资源表 → 一并清掉（lint 由 6 条降至 1 条，剩下那条是 AAPT 与 lint 建议冲突，见第一节） |

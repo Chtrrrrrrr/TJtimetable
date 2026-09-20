@@ -26,6 +26,7 @@ import com.ranorac.tjtimetable.domain.ReminderPlanner
 import com.ranorac.tjtimetable.domain.Timetable
 import kotlinx.coroutines.flow.first
 import java.time.Duration
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
 
@@ -48,9 +49,13 @@ object ReminderScheduler {
 
     const val CHANNEL_ID = "class_reminders"
 
-    /** Creates the notification channel; safe to call repeatedly. */
+    /**
+     * Creates the notification channel; safe to call repeatedly.
+     *
+     * No `SDK_INT >= O` guard: `minSdk` is 26, which *is* O, so the check can never
+     * be false and would only suggest the app still supports pre-channel Android.
+     */
     fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         if (manager.getNotificationChannel(CHANNEL_ID) != null) return
         manager.createNotificationChannel(
@@ -145,9 +150,13 @@ object ReminderScheduler {
                 .setAutoCancel(true)
                 .build()
 
-            // A stable id per (date, 节) so a re-run replaces rather than duplicates.
-            val id = (reminder.occurrence.date.toEpochDay() % 100_000).toInt() * 100 +
-                reminder.occurrence.startUnit
+            // A stable id per (date, 节, course) so a re-run replaces rather than duplicates,
+            // while two different courses in the same 节 on the same date do not collide.
+            // The course name is mixed in because that is the only part of the identity
+            // guaranteed to differ between them: two courses can share a date and a 节 (a
+            // 补课日 clash, or simply two classes the student takes in parallel) and the
+            // second notification used to overwrite the first.
+            val id = notificationId(reminder.occurrence.date, reminder.occurrence.startUnit, reminder.courseName)
 
             // Checked again here, not just in canNotify() above: lint's MissingPermission
             // analysis cannot see through a helper, and on API 33+ notify() genuinely
@@ -170,6 +179,33 @@ object ReminderScheduler {
         return posted
     }
 }
+
+/**
+ * A stable notification id for one class meeting.
+ *
+ * It has to be stable so that a re-run REPLACES its notification instead of stacking a second
+ * copy, and it has to be distinct per meeting so that two classes in the same 节 on the same
+ * date do not collide — the previous `(epochDay % 100_000) * 100 + startUnit` did exactly that,
+ * and the second course silently replaced the first. [courseName] is the discriminator because
+ * it is the only part of a meeting's identity a student can tell apart; a stable string hash
+ * rather than `hashCode()` keeps the id identical across processes.
+ *
+ * Kept `internal` and pure so the collision can be asserted in a plain JVM test.
+ */
+internal fun notificationId(date: LocalDate, startUnit: Int, courseName: String): Int {
+    val day = (date.toEpochDay() % 100_000L).toInt()
+    var hash = FNV_OFFSET
+    for (ch in courseName) {
+        hash = hash xor ch.code
+        hash *= FNV_PRIME
+    }
+    // Fold the full 31 bits of the hash in, not just one byte: two courses must differ even
+    // when their names agree except in a late character, and `Int` ids have room for it.
+    return ((day * 31 + startUnit) and 0x3FFF_FFFF) * 31 + (hash and 0x1FFF_FFFF) and 0x7FFF_FFFF
+}
+
+private const val FNV_OFFSET = -2_128_831_035
+private const val FNV_PRIME = 16_777_619
 
 /**
  * Fires at one reminder's trigger time, posts anything due, then arms the next.

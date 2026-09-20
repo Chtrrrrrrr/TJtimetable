@@ -34,6 +34,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -126,10 +127,36 @@ fun TongjiLoginScreen(
     val scope = rememberCoroutineScope()
 
     var webView by remember { mutableStateOf<WebView?>(null) }
+    /** The `window.open` popup, if the page opened one; destroyed on close and on dispose. */
+    var popupWebView by remember { mutableStateOf<WebView?>(null) }
     var currentUrl by remember { mutableStateOf(TONGJI_HOME) }
     var atTimetablePage by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<CaptureStatus>(CaptureStatus.Browsing) }
     var recorded by remember { mutableStateOf<RecordedTimetableRequest?>(null) }
+
+    // A WebView is not garbage-collected like an ordinary view: it holds a strong reference
+    // to the Activity context it was built with and keeps its renderer process / JS heap
+    // alive until destroy() is called. Since this route is the primary import path it is
+    // opened repeatedly — cancel, capture, come back later — so without this every visit
+    // leaks one Activity context and one renderer. `AndroidView` does not destroy its view
+    // on its own, and it does not know about the popup created in onCreateWindow either.
+    DisposableEffect(Unit) {
+        onDispose {
+            popupWebView?.let { popup ->
+                popup.stopLoading()
+                popup.destroy()
+            }
+            popupWebView = null
+            webView?.let { view ->
+                // Detach first: destroying a view that is still in the hierarchy can leave a
+                // blank surface behind it while the composition unwinds.
+                (view.parent as? android.view.ViewGroup)?.removeView(view)
+                view.stopLoading()
+                view.destroy()
+            }
+            webView = null
+        }
+    }
 
     Scaffold(
         containerColor = gh.canvasDefault,
@@ -291,9 +318,25 @@ fun TongjiLoginScreen(
                                             return true
                                         }
                                     }
+                                    // The navigation the popup would perform is re-issued on
+                                    // `main`, so the popup view itself is disposable — but it
+                                    // still holds a renderer of its own, and nothing in the
+                                    // hierarchy will ever destroy it. Keeping it in a local
+                                    // that the chrome client tears down on close is what stops
+                                    // a login popup from leaking one WebView per attempt.
+                                    popupWebView = popup
                                     (resultMsg?.obj as? WebView.WebViewTransport)?.webView = popup
                                     resultMsg?.sendToTarget()
                                     return true
+                                }
+
+                                override fun onCloseWindow(window: WebView?) {
+                                    popupWebView?.takeIf { it === window }?.let { popup ->
+                                        popup.stopLoading()
+                                        popup.destroy()
+                                        popupWebView = null
+                                    }
+                                    super.onCloseWindow(window)
                                 }
                             }
 

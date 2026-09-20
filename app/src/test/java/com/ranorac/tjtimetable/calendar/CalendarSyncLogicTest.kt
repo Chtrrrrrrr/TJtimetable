@@ -215,6 +215,85 @@ class CalendarSyncLogicTest {
         )
     }
 
+    @Test
+    fun `no meeting the grid shows is missing from the calendar`() {
+        // The strongest form of "the calendar does not contradict the app": walk every
+        // occurrence the grid would draw and prove an event exists for it. A rule counts for
+        // the dates it generates minus its EXDATEs; anything else has to be a standalone row.
+        val adjustments = adjustmentsWithMakeup()
+        val timetable = Timetable(term, courses, sessions, adjustments, PeriodSchedule.TONGJI)
+        val grid = TimetableResolver.occurrencesBetween(timetable, from, to)
+        assertTrue("the fixture must produce classes at all", grid.isNotEmpty())
+
+        val byCourse = grid.groupBy { it.session.id }
+        for ((sessionId, occurrences) in byCourse) {
+            val session = sessions.single { it.id == sessionId }
+            val course = courses.single { it.id == session.courseId }
+            val specOccurrences = resolveOccurrences(
+                listOf(course), listOf(session), term, PeriodSchedule.TONGJI, adjustments, from, to,
+            )
+            val specs = buildEventSpecs(
+                course, session, specOccurrences, term, PeriodSchedule.TONGJI, adjustments, zone, 15,
+            )
+
+            val generated = specs.filter { it.rrule != null }
+                .flatMap { spec -> generatedDates(spec) }
+                .toSet()
+            val standalone = specs.filter { it.rrule == null }
+                .map { millisToLocalDate(it.startMillis) }
+                .toSet()
+
+            val missing = occurrences.map { it.date }.filter { it !in generated && it !in standalone }
+            assertTrue(
+                "these meeting dates are on the grid but in no calendar event: $missing",
+                missing.isEmpty(),
+            )
+        }
+        // And the fixture really does contain the awkward case this guards: a 补课日 whose
+        // week still teaches the nominal date (3/2 is a holiday, 3/7 is the makeup, so the
+        // Monday rule's slot for week 1 is cancelled while the makeup week is nonzero).
+        assertTrue(
+            "the fixture must exercise 调休, or this proves nothing",
+            grid.any { it.date == LocalDate.of(2026, 3, 7) },
+        )
+    }
+
+    /**
+     * The dates a recurring [CalendarEventSpec] fires on, from its own rule.
+     *
+     * Independent of `CalendarSync`'s internal bookkeeping on purpose: it expands
+     * `DTSTART` + `FREQ=WEEKLY` + `INTERVAL`/`COUNT` and subtracts the `EXDATE`s, which is
+     * exactly what a calendar app does with the row. Expanded here week-by-week until
+     * `COUNT` occurrences have been produced, then filtered by the exclusion list.
+     */
+    private fun generatedDates(spec: CalendarEventSpec): List<LocalDate> {
+        val rule = spec.rrule ?: return emptyList()
+        val parts = rule.split(';').associate {
+            val (k, v) = it.split('=', limit = 2)
+            k.uppercase() to v
+        }
+        val interval = parts["INTERVAL"]?.trim()?.toLongOrNull() ?: 1L
+        val count = parts["COUNT"]?.trim()?.toIntOrNull() ?: return emptyList()
+
+        val start = millisToLocalDate(spec.startMillis)
+        val excluded = spec.exdates.orEmpty().map { exdateToLocalDate(it) }.toSet()
+
+        return (0 until count).map { start.plusWeeks(it * interval) }.filterNot { it in excluded }
+    }
+
+    /** `yyyyMMdd'T'HHmmss` as written by `toExdate`. */
+    private fun exdateToLocalDate(value: String): LocalDate {
+        val digits = value.takeWhile { it.isDigit() }
+        return LocalDate.of(
+            digits.substring(0, 4).toInt(),
+            digits.substring(4, 6).toInt(),
+            digits.substring(6, 8).toInt(),
+        )
+    }
+
+    private fun millisToLocalDate(millis: Long): LocalDate =
+        java.time.Instant.ofEpochMilli(millis).atZone(zone).toLocalDate()
+
     // ------------------------------------------- calendar vs. grid agreement
 
     private fun adjustmentsWithMakeup(): ScheduleAdjustmentSet {

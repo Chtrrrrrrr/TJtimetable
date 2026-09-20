@@ -50,6 +50,23 @@ object ReminderPlanner {
     const val MAX_LEAD_MINUTES = 24 * 60
 
     /**
+     * How long past its trigger a reminder may still be posted, in minutes.
+     *
+     * This has to be measured against what actually defers a worker, not against the
+     * precision of a scheduler. WorkManager's own minimum interval is 15 minutes and it
+     * batches and defers freely under Doze or app standby, so a window of a few minutes
+     * is not "tolerance", it is a coin flip: the worker runs late, [due] finds nothing,
+     * and — because the worker then arms the *next* reminder and [plan] never returns a
+     * past trigger — that class can never be reminded about again. Silently losing one
+     * reminder is the single failure mode this feature must not have.
+     *
+     * 30 minutes is comfortably longer than a realistic deferral and still short enough
+     * that a reminder never refers to a class the student has already missed: [due] also
+     * refuses to fire once the class itself has started, whichever bound is tighter.
+     */
+    const val DEFAULT_DUE_WINDOW_MINUTES = 30L
+
+    /**
      * Upcoming reminders after [now], ordered by trigger time.
      *
      * Occurrences with no known start time are skipped: without a 作息 entry there
@@ -88,7 +105,14 @@ object ReminderPlanner {
      *
      * WorkManager runs late (Doze, batching), so the worker looks for a *window*
      * rather than an exact instant. Without the window a delayed run would silently
-     * skip a class, which is the one failure a reminder must never have.
+     * skip a class, which is the one failure a reminder must never have — hence
+     * [DEFAULT_DUE_WINDOW_MINUTES], not a token few minutes.
+     *
+     * The window is additionally capped at the class's own start: a notification that
+     * arrives after the lecture began is a report rather than a reminder. Whichever bound is
+     * tighter wins, so with any real lead the class start is what binds — the window only has
+     * to be long enough not to bind first, which is exactly what the old 5-minute default got
+     * wrong.
      *
      * Both today and tomorrow are scanned because a large lead time can push a
      * next-morning class's trigger into today.
@@ -101,7 +125,7 @@ object ReminderPlanner {
         timetable: Timetable,
         now: LocalDateTime,
         leadMinutes: Int,
-        windowMinutes: Long = 5,
+        windowMinutes: Long = DEFAULT_DUE_WINDOW_MINUTES,
     ): List<ClassReminder> {
         if (timetable.isEmpty) return emptyList()
         val lead = leadMinutes.coerceIn(0, MAX_LEAD_MINUTES)
@@ -111,14 +135,27 @@ object ReminderPlanner {
         return TimetableResolver.occurrencesBetween(timetable, today, today.plusDays(1))
             .mapNotNull { occurrence ->
                 val start = occurrence.startTime ?: return@mapNotNull null
-                val trigger = LocalDateTime.of(occurrence.date, start).minusMinutes(lead.toLong())
+                val classStart = LocalDateTime.of(occurrence.date, start)
+                val trigger = classStart.minusMinutes(lead.toLong())
                 val elapsed = Duration.between(trigger, now).toMinutes()
+                // Two bounds, and the second one is what the fix is about. `elapsed` is
+                // measured from the trigger, which already sits `lead` minutes before the
+                // class, so the class-start bound caps lateness at the lead *and* the window
+                // rule caps it at `window` — whichever is tighter wins.
+                //
+                // Capping at the class start rather than at a fixed few minutes is the whole
+                // point: a reminder may be posted at any point between its trigger and the
+                // class itself, so a worker deferred by Doze still delivers it. The old
+                // 5-minute window ended the window while the student still had 10 minutes of
+                // warning left, and the class could never be reminded about again because the
+                // worker arms the *next* reminder and `plan` never returns a past trigger.
+                val beforeClass = !now.isAfter(classStart)
                 // `toMinutes()` truncates toward zero, so this also accepts a trigger
                 // up to 59 seconds in the FUTURE (elapsed == 0). That is deliberate:
                 // firing marginally early is harmless, whereas the alternative —
                 // demanding elapsed >= 1 — would drop a reminder whenever the worker
                 // happened to run a second before the trigger.
-                if (elapsed < 0 || elapsed > window) return@mapNotNull null
+                if (elapsed < 0 || elapsed > window || !beforeClass) return@mapNotNull null
                 ClassReminder(occurrence, trigger, lead)
             }
             .sortedBy { it.triggerAt }
