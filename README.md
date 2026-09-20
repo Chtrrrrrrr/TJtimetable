@@ -52,7 +52,16 @@
 .\tools\dev\build.ps1 :app:assembleRelease
 ```
 
-产物：`app/build/outputs/apk/debug/app-debug.apk`
+产物：
+
+| 变体 | 路径 | 签名 |
+|---|---|---|
+| debug | `app/build/outputs/apk/debug/app-debug.apk` | 调试签名 |
+| release | `app/build/outputs/apk/release/app-release.apk` | release 密钥（`keystore/`，已 gitignore） |
+
+> release 签名是**可选**的：`keystore/keystore.properties` 存在时启用，不存在时仍会构建出
+> `app-release-unsigned.apk`——这样没有私钥的人也能验证 R8 与资源压缩（只有 release 才会
+> 暴露的那类错误），而只有发布需要私钥。详见[技术手册](docs/MANUAL.md#五构建)。
 
 > `maven.google.com` 在部分网络下不可达，因此 `settings.gradle.kts` 优先使用阿里云镜像，
 > JDK 走清华 Adoptium 镜像，Gradle 走腾讯镜像。详见[技术手册](docs/MANUAL.md#五构建)。

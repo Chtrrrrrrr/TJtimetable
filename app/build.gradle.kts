@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -7,6 +8,19 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
+
+/**
+ * Release signing credentials, read from `keystore/keystore.properties` — which is gitignored,
+ * because the key file and its password must never enter version control.
+ *
+ * Loaded optionally, and that is the important part: without the file the release variant stays
+ * **unsigned** instead of failing the build. A contributor with no key can still run
+ * `assembleRelease` to check that R8 and the shrinking rules work, which is exactly the check
+ * that catches serialization-proguard mistakes. Only publishing needs the key.
+ */
+val releaseSigning: Properties? = rootProject.file("keystore/keystore.properties")
+    .takeIf { it.exists() }
+    ?.let { file -> Properties().apply { file.inputStream().use { load(it) } } }
 
 android {
     namespace = "com.ranorac.tjtimetable"
@@ -22,6 +36,24 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    signingConfigs {
+        if (releaseSigning != null) {
+            create("release") {
+                // `storeFile` in the properties is written relative to the repository root, so
+                // it is resolved against `rootProject` rather than the `app` module.
+                storeFile = rootProject.file(releaseSigning.getProperty("storeFile"))
+                storePassword = releaseSigning.getProperty("storePassword")
+                keyAlias = releaseSigning.getProperty("keyAlias")
+                keyPassword = releaseSigning.getProperty("keyPassword")
+                // v1 is kept alongside v2/v3: it costs nothing and it is what lets an APK
+                // install on an odd OEM build (or an old tool) that ignores the newer schemes.
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -33,6 +65,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            // Null when no keystore: the variant is then built but left unsigned.
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 

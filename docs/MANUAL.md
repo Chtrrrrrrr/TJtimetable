@@ -49,7 +49,8 @@
 | 变体 | 大小 | 说明 |
 |---|---|---|
 | debug | 19.49 MiB | 包名 `com.ranorac.tjtimetable.debug`，minSdk 26 / targetSdk 35 |
-| release | 2.42 MiB | 未签名（无 keystore），R8 压缩约 88% |
+| release（已签名） | 2.51 MiB | `app-release.apk`，v2 + v3 签名方案，R8 压缩约 87% |
+| release（未签名） | 2.42 MiB | `app-release-unsigned.apk`，仅在缺少 `keystore/keystore.properties` 时产出 |
 
 release 构建通过值得注意：`mapping.txt` 中 API DTO 未被重命名，说明
 `proguard-rules.pro` 的 kotlinx.serialization 保留规则正确——这类规则写错通常只在
@@ -485,9 +486,38 @@ Compose 渲染：`TimetableScreenRenderTest` 11 项、`OtherScreensRenderTest` 1
 # 2) 构建调试包
 .\tools\dev\build.ps1                      # 默认 assembleDebug
 .\tools\dev\build.ps1 :app:testDebugUnitTest
+.\tools\dev\build.ps1 :app:assembleRelease
 ```
 
-产物：`app/build/outputs/apk/debug/app-debug.apk`
+产物：
+
+| 变体 | 路径 | 签名 |
+|---|---|---|
+| debug | `app/build/outputs/apk/debug/app-debug.apk` | 调试签名（包名带 `.debug` 后缀，可与正式包共存） |
+| release | `app/build/outputs/apk/release/app-release.apk` | 本机 release 密钥（见下）；**没有密钥时**产出 `app-release-unsigned.apk` |
+
+### release 签名
+
+密钥与口令放在 `keystore/`（整个目录已 gitignore：`*.jks` / `keystore.properties`），
+`app/build.gradle.kts` 在**文件存在时**读取它并启用 `signingConfigs.release`，
+不存在时 release 变体照常构建、只是不签名。这个「可选」是刻意的：
+没有私钥的人仍然能跑 `assembleRelease` 来验证 R8 与资源压缩规则（那是只有 release
+才会暴露的一类错误，例如 kotlinx.serialization 的保留规则写错），而**只有发布**需要私钥。
+
+```powershell
+# 发布前自检（用工具链里的 build-tools，不需要系统装 JDK）
+$env:JAVA_HOME = "$PWD\.toolchain\jdk"
+$bt = Get-ChildItem .toolchain\android-sdk\build-tools -Directory |
+      Sort-Object Name -Descending | Select-Object -First 1
+& "$($bt.FullName)\apksigner.bat" verify --verbose --print-certs `
+    app\build\outputs\apk\release\app-release.apk
+& "$($bt.FullName)\zipalign.exe" -c -v 4 app\build\outputs\apk\release\app-release.apk
+```
+
+> ⚠️ **务必备份 `keystore/` 整个目录。** 同一个 `applicationId` 的后续版本必须用同一把私钥签名，
+> 否则 Android 会拒绝覆盖安装——只能让用户先卸载再装，而卸载会带走本地课表与调休。
+> `apksigner` 的期望输出是 `Verifies` 加上 v2/v3 两行 `true`；
+> 证书指纹应与上一版一致（v2.2.1：SHA-256 `3dec7c9b…34a`）。
 
 > **网络说明**：`maven.google.com` 与 `dl.google.com` 在部分网络下不可用或很慢，
 > 因此 `settings.gradle.kts` 优先使用阿里云镜像（google/public/gradle-plugin），
