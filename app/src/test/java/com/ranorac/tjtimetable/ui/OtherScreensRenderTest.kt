@@ -36,6 +36,7 @@ import com.ranorac.tjtimetable.ui.settings.SettingsScreen
 import com.ranorac.tjtimetable.ui.settings.SettingsUiState
 import com.ranorac.tjtimetable.ui.theme.TJTimetableTheme
 import com.ranorac.tjtimetable.ui.timetable.CourseDetailSheet
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -411,5 +412,75 @@ class OtherScreensRenderTest {
         // conditional, which is exactly where a null assumption would crash).
         compose.onNodeWithText("被隐藏的课").assertExists()
         compose.onNodeWithText("恢复显示这门课").assertExists()
+        // 全部时段 is unconditional now, so even a slot-less course shows the heading
+        // with an explicit placeholder rather than silently dropping the section.
+        compose.onNodeWithText("全部时段").assertExists()
+        compose.onNodeWithText("暂无排课时段信息").assertExists()
+    }
+
+    @Test
+    fun `course detail sheet lists every slot even for a single all-term one`() {
+        // Regression: the 全部时段 block used to be gated on
+        // `sessions.size > 1 || parityLabel != null`, so a course with one plain
+        // all-term slot — the most common shape of all — never showed when or where
+        // it actually meets.
+        val course = Course(id = 7, name = "大学英语")
+        val session = CourseSession(
+            id = 3,
+            courseId = 7,
+            dayOfWeek = DayOfWeek.THURSDAY,
+            startUnit = 1,
+            endUnit = 2,
+            weeks = WeekPattern.parse("[1-16]"),
+            room = "北202",
+        )
+
+        compose.setContent {
+            TJTimetableTheme {
+                CourseDetailSheet(
+                    course = course,
+                    occurrence = null,
+                    sessions = listOf(session),
+                    onDismiss = {},
+                    onSetColor = {},
+                    onSetHidden = {},
+                    onSetNote = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("全部时段").assertExists()
+        compose.onNodeWithText("周四 1-2 节").assertExists()
+        compose.onNodeWithText("北202", substring = true).assertExists()
+    }
+
+    @Test
+    fun `back press dismisses the course detail sheet`() {
+        // Regression: the sheet used to rely purely on Material3's internal back
+        // handling. With android:enableOnBackInvokedCallback="true" that left the app
+        // with a back gesture that went nowhere — students could not leave the screen.
+        // The sheet now owns back explicitly, so a back press must dismiss it.
+        val course = Course(id = 11, name = "线性代数")
+        var dismissed = false
+
+        compose.setContent {
+            TJTimetableTheme {
+                CourseDetailSheet(
+                    course = course,
+                    occurrence = null,
+                    sessions = emptyList(),
+                    onDismiss = { dismissed = true },
+                    onSetColor = {},
+                    onSetHidden = {},
+                    onSetNote = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("线性代数").assertExists()
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
+
+        assertTrue("back press must dismiss the sheet", dismissed)
     }
 }

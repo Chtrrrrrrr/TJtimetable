@@ -1,5 +1,6 @@
 package com.ranorac.tjtimetable.ui.timetable
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -29,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +53,7 @@ import com.ranorac.tjtimetable.ui.components.NeutralBadge
 import com.ranorac.tjtimetable.ui.components.VGap
 import com.ranorac.tjtimetable.ui.theme.CourseHues
 import com.ranorac.tjtimetable.ui.theme.LocalGitHubColors
+import kotlinx.coroutines.launch
 
 /**
  * Course detail, shown as a bottom sheet when a class block is tapped.
@@ -73,7 +77,24 @@ fun CourseDetailSheet(
 ) {
     val gh = LocalGitHubColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
     val hue = CourseHues[course.effectiveColorIndex % CourseHues.size]
+
+    // Every dismissal runs through the sheet's own hide animation. Removing an
+    // *expanded* ModalBottomSheet from composition instead leaves its dialog window
+    // behind, and that orphan window keeps swallowing the back gesture — which is
+    // what made the app impossible to leave with the back button.
+    val close: () -> Unit = {
+        scope.launch {
+            sheetState.hide()
+            onDismiss()
+        }
+    }
+
+    // Back is owned by this sheet and only while it exists: `shouldDismissOnBackPress`
+    // is switched off below so there is exactly one consumer. Once the sheet is gone
+    // nothing intercepts back any more, so the system can finish the activity again.
+    BackHandler { close() }
 
     // Seeded per course; re-seeding on every recomposition would fight typing.
     var note by remember(course.id) { mutableStateOf(course.note.orEmpty()) }
@@ -82,6 +103,7 @@ fun CourseDetailSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
         containerColor = gh.canvasDefault,
         contentColor = gh.fgDefault,
     ) {
@@ -146,13 +168,20 @@ fun CourseDetailSheet(
             }
 
             // ------------------------------------------------- 全部时段
-            if (sessions.size > 1 || sessions.firstOrNull()?.weeks?.parityLabel != null) {
-                Text("全部时段", style = MaterialTheme.typography.titleMedium, color = gh.fgDefault)
-                VGap()
-                GitHubCard {
-                    sessions.sortedWith(
-                        compareBy({ it.dayOfWeek.value }, { it.startUnit }),
-                    ).forEachIndexed { index, session ->
+            // Shown for every course, not just multi-slot or 单双周 ones: a course with
+            // a single all-term slot still has to say when and where it meets, and the
+            // old `size > 1 || parityLabel != null` gate hid the section for exactly
+            // that (the most common) case.
+            Text("全部时段", style = MaterialTheme.typography.titleMedium, color = gh.fgDefault)
+            VGap()
+            GitHubCard {
+                val ordered = sessions.sortedWith(
+                    compareBy({ it.dayOfWeek.value }, { it.startUnit }),
+                )
+                if (ordered.isEmpty()) {
+                    MutedText("暂无排课时段信息")
+                } else {
+                    ordered.forEachIndexed { index, session ->
                         if (index > 0) GitHubDivider()
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -175,8 +204,8 @@ fun CourseDetailSheet(
                         }
                     }
                 }
-                VGap(3)
             }
+            VGap(3)
 
             // ------------------------------------------------- 课程信息
             Text("课程信息", style = MaterialTheme.typography.titleMedium, color = gh.fgDefault)
@@ -250,7 +279,13 @@ fun CourseDetailSheet(
             VGap()
             GitHubSecondaryButton(
                 text = if (course.hidden) "恢复显示这门课" else "隐藏这门课",
-                onClick = { onSetHidden(!course.hidden) },
+                onClick = {
+                    onSetHidden(!course.hidden)
+                    // Hiding drops the course from the grid, so close the sheet — but
+                    // through its own hide animation, never by deleting it from the
+                    // composition while it is still expanded.
+                    if (!course.hidden) close()
+                },
             )
             VGap()
             MutedText(

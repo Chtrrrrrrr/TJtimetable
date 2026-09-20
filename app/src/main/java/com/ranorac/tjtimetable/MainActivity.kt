@@ -3,6 +3,7 @@ package com.ranorac.tjtimetable
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -100,6 +102,10 @@ private fun AppRoot(container: AppContainer) {
     var showLogin by rememberSaveable { mutableStateOf(false) }
 
     if (showLogin) {
+        // Back leaves the login browser and returns to the app instead of falling
+        // through to the activity and killing the whole process. Registered only on
+        // this route, so nothing intercepts back once it is closed.
+        BackHandler { showLogin = false }
         TongjiLoginScreen(
             onCaptured = { url, body ->
                 settingsViewModel.importCaptured(url, body)
@@ -182,8 +188,14 @@ private fun TimetableRoute(container: AppContainer, onOpenLogin: () -> Unit) {
 
     val timetable = state.timetable
     val course = selected?.let { occurrence -> timetable?.course(occurrence.course.id) }
+    // A re-import can drop the course the sheet is showing. Clear the selection rather
+    // than leaving `selected` pointing at something that no longer resolves — otherwise
+    // a later import reusing the same id would silently reopen a stale sheet.
     // Both are checked explicitly: `course` is derived through a safe call, so the
     // compiler cannot infer that `timetable` is non-null from it.
+    LaunchedEffect(selected, timetable, course) {
+        if (selected != null && timetable != null && course == null) selected = null
+    }
     if (timetable != null && course != null) {
         CourseDetailSheet(
             course = course,
@@ -191,12 +203,10 @@ private fun TimetableRoute(container: AppContainer, onOpenLogin: () -> Unit) {
             sessions = timetable.sessionsOf(course.id),
             onDismiss = { selected = null },
             onSetColor = { viewModel.setCourseColor(course.id, it) },
-            onSetHidden = { hidden ->
-                viewModel.setCourseHidden(course.id, hidden, course.name)
-                // A newly hidden course leaves the visible list, so close the sheet
-                // rather than leaving it showing something the grid no longer has.
-                if (hidden) selected = null
-            },
+            // The sheet closes itself through its hide animation when a course is
+            // hidden; clearing `selected` here would rip it out of the composition
+            // mid-animation and orphan its dialog window.
+            onSetHidden = { hidden -> viewModel.setCourseHidden(course.id, hidden, course.name) },
             onSetNote = { viewModel.setCourseNote(course.id, it) },
         )
     }
