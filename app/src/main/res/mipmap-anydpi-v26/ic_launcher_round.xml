@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  `android:roundIcon` target.
+
+  Deliberately the same adaptive-icon document as `ic_launcher.xml`: the round shape is a mask
+  applied BY the launcher, so an app must not draw its own circular variant. Pointing roundIcon at
+  a hand-made round bitmap is what produces a visible circular crop inside whatever shape the
+  launcher actually uses — including a ring around an already-cropped image, which is the artefact
+  this file exists to avoid.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome" />
 </adaptive-icon>

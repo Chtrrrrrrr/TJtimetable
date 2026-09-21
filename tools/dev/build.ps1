@@ -26,6 +26,13 @@ $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
 # Keep every downloaded artifact inside the workspace so the sandbox can write it
 # and nothing leaks into the machine-wide ~/.gradle.
 $env:GRADLE_USER_HOME = Join-Path $TC 'gradle-home'
+# Android's user directory (debug keystore, adb keys, AVDs) defaults to %USERPROFILE%\.android.
+# `validateSigningDebug` creates and locks `debug.keystore` there, which fails under a sandbox
+# that can only write inside the workspace — the build dies with
+# `AccessDeniedException: ...debug.keystore.lock` before a single source file is compiled.
+# `ANDROID_USER_HOME` is the documented Android SDK variable for exactly this relocation, so the
+# whole toolchain stays self-contained next to the JDK and the SDK it already ships.
+$env:ANDROID_USER_HOME = Join-Path $TC 'android-user-home'
 $env:PATH = "$env:JAVA_HOME\bin;$env:ANDROID_HOME\platform-tools;$TC\gradle-8.11.1\bin;$env:PATH"
 
 $gradle = Join-Path $TC 'gradle-8.11.1\bin\gradle.bat'

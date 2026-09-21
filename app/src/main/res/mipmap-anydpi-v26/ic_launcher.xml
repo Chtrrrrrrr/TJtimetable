@@ -1,6 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive launcher icon.
+
+  Both layers are raster (PNG density buckets in mipmap-*/), not vector drawables, and that is a
+  compatibility decision rather than an aesthetic one:
+
+    * Android's own contract is that <background>/<foreground> are drawables, and vectors are
+      legal there. In practice, OEM launchers — Honor/MagicOS and the other EMUI-derived ones in
+      particular — rasterise the layers through their own pipeline, and a layer supplied as a
+      <vector> is not always recognised as "an adaptive icon this app provides". When that check
+      fails the launcher falls back to decorating the legacy bitmap: it rounds the corners of the
+      flat icon and paints a ring/backing behind it. That is the "circled with a halo" appearance
+      a vector-only icon picks up on those devices while neighbouring apps look correct.
+    * Shipping the same artwork as PNG in every density bucket removes that branch entirely: it
+      is the exact shape Android Studio's Image Asset wizard produces, and the shape every
+      launcher is tested against.
+    * mipmap-anydpi-v26 is the highest-priority bucket and wins on every device with minSdk 26,
+      so this file is always the one used; the PNGs are the layers it points at.
+
+  Geometry note: the card and its blocks sit at 29..79 / 30..78 in the 108x108 canvas, i.e.
+  inside the 72x72 safe zone (18..90), so no launcher mask can clip the artwork.
+
+  <monochrome> points at its own PNG rather than reusing the foreground. Some engines mis-handle
+  one resource being referenced twice by the same icon, and a themed icon wants a flat
+  silhouette anyway — the blue blocks are colour that the system is going to discard.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome" />
 </adaptive-icon>
