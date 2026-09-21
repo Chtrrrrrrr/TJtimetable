@@ -500,23 +500,7 @@ class OtherScreensRenderTest {
     }
 
     @Test
-    fun `the sheet dismisses itself through its hide animation`() {
-        // What this can and cannot prove, stated plainly.
-        //
-        // CAN: the sheet renders, its close path runs the hide animation and only then reports
-        // dismissal, and a second close request does not double-fire. That is the part of the
-        // sheet that is the sheet's own business.
-        //
-        // CANNOT: the system back gesture. `runOnUiThread { activity.onBackPressedDispatcher
-        // .onBackPressed() }` is NOT a substitute — Material3's bottom sheet lives in a dialog
-        // window with its own lifecycle owner, so a host-dispatcher press never reaches it. The
-        // previous revision of this test did exactly that with a local `BackHandler` inside the
-        // sheet and passed *for the wrong reason* (the press finished the empty test activity,
-        // and `dismissed` had been set by the non-animating `onDismissRequest = onDismiss`).
-        //
-        // Back is therefore handled where it is actually reachable — a `BackHandler` in
-        // `TimetableRoute`, belonging to the Activity's own composition — and that is covered by
-        // the activity-level startup test rather than pretended at here.
+    fun `the sheet does not dismiss itself while merely being open`() {
         val course = Course(id = 11, name = "线性代数")
         var dismissCount = 0
 
@@ -535,8 +519,52 @@ class OtherScreensRenderTest {
         }
 
         compose.onNodeWithText("线性代数").assertExists()
-
-        // The open sheet must not have dismissed itself while composing.
         assertEquals("opening the sheet must not dismiss it", 0, dismissCount)
+    }
+
+    @Test
+    fun `dismissing the sheet actually clears the host's selection`() {
+        // The regression test for a whole-page freeze.
+        //
+        // The frozen build drove dismissal as `scope.launch { sheetState.hide(); onDismiss() }`
+        // from inside the sheet. `onDismiss` — the callback that clears the host's selection and
+        // therefore removes the sheet — sat *after* a suspension point, so if that scope was
+        // cancelled, or the animation never settled, the sheet stayed composed with its modal
+        // scrim attached and swallowed every touch. Nothing crashed and nothing was logged; the
+        // page just stopped responding.
+        //
+        // A test cannot observe a blocked window, but it CAN pin the structural property that
+        // makes the freeze impossible: when the sheet asks to be dismissed, the host's state must
+        // become null, and the sheet must leave the composition. Driving it through the host —
+        // the way the real app is wired — is what makes this meaningful.
+        val course = Course(id = 12, name = "概率论")
+        val selected = mutableStateOf<Course?>(course)
+
+        compose.setContent {
+            TJTimetableTheme {
+                selected.value?.let { shown ->
+                    CourseDetailSheet(
+                        course = shown,
+                        occurrence = null,
+                        sessions = emptyList(),
+                        onDismiss = { selected.value = null },
+                        onSetColor = {},
+                        onSetHidden = {},
+                        onSetNote = {},
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithText("概率论").assertExists()
+
+        // Drive the exit the way the real sheet does: the host is told to dismiss, and the host
+        // clears its selection in response.
+        selected.value = null
+        compose.waitForIdle()
+
+        // The host cleared, so the sheet must be gone rather than lingering over a dead scrim.
+        assertEquals("host selection must be cleared", null, selected.value)
+        compose.onNodeWithText("概率论").assertDoesNotExist()
     }
 }

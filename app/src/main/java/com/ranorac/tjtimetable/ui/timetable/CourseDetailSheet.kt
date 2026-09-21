@@ -29,7 +29,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,48 +74,29 @@ fun CourseDetailSheet(
 ) {
     val gh = LocalGitHubColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
     val hue = CourseHues[course.effectiveColorIndex % CourseHues.size]
 
-    // The ONE way out. Every dismissal — the 关闭 button, the scrim, the back gesture — goes
-    // through this, so the sheet always runs its hide animation before the parent drops it from
-    // composition. Removing an expanded ModalBottomSheet from composition instead leaves its
-    // dialog window behind, and that orphan window swallows the back gesture: the app then
-    // cannot be left at all. `closeRequested` makes the close idempotent, so a double tap or a
-    // back gesture during the animation cannot start two hides.
-    var closeRequested by remember { mutableStateOf(false) }
-    val close: () -> Unit = {
-        if (!closeRequested) {
-            closeRequested = true
-            scope.launch {
-                sheetState.hide()
-                onDismiss()
-            }
-        }
-    }
-
-    // Back is left to Material3: `ModalBottomSheet` installs its own back callback by default
-    // (`shouldDismissOnBackPress = true`) and routes it to `onDismissRequest`. That is the one
-    // path every Compose app uses, it is exercised by the framework's own tests, and it needs no
-    // second consumer.
+    // Dismissal must NOT drive the sheet's own animation, and that is the fix for a total freeze.
     //
-    // The previous version replaced it with a local `BackHandler` plus
-    // `shouldDismissOnBackPress = false`. That is a smaller window than it looks: the handler is
-    // installed from inside the sheet's *dialog* content, so it registers against the dialog's
-    // lifecycle owner rather than the Activity's — and the system back gesture consulted nobody,
-    // which is exactly the reported symptom (the sheet could only be swiped away, never backed
-    // out of). Two owners racing for one gesture is worse than one owner doing it properly.
+    // The previous revision routed every exit through `sheetState.hide()` inside a
+    // `rememberCoroutineScope().launch`. That scope belongs to this composition and is cancelled
+    // the moment the parent stops composing the sheet — so the second half of the path (the
+    // `onDismiss()` that clears the parent's selection) could simply never run. The sheet then
+    // stayed in the hierarchy with its modal layer attached: an invisible scrim swallowing every
+    // touch on the page. Whole-screen freeze, no crash, nothing in the log to grep for.
+    //
+    // Material3 animates the dismissal itself: when the scrim is tapped, back is pressed, or the
+    // sheet is dragged down, it plays the hide animation and only then calls `onDismissRequest`.
+    // So that callback is the single, non-suspending way out, and the parent reacts by clearing
+    // its state — which removes this composable and disposes the dialog window in the same frame.
+    val dismiss: () -> Unit = onDismiss
 
     // Seeded per course; re-seeding on every recomposition would fight typing.
     var note by remember(course.id) { mutableStateOf(course.note.orEmpty()) }
     val noteDirty = note != course.note.orEmpty()
 
     ModalBottomSheet(
-        // Back, scrim tap and drag-down all arrive here, and all of them end in the same `close`,
-        // so the sheet always runs its hide animation instead of being ripped out of the
-        // composition while still expanded — which is what leaves an orphan dialog window behind
-        // that swallows every later gesture.
-        onDismissRequest = close,
+        onDismissRequest = dismiss,
         sheetState = sheetState,
         containerColor = gh.canvasDefault,
         contentColor = gh.fgDefault,
@@ -295,10 +275,11 @@ fun CourseDetailSheet(
                 text = if (course.hidden) "恢复显示这门课" else "隐藏这门课",
                 onClick = {
                     onSetHidden(!course.hidden)
-                    // Hiding drops the course from the grid, so close the sheet — but
-                    // through its own hide animation, never by deleting it from the
-                    // composition while it is still expanded.
-                    if (!course.hidden) close()
+                    // Hiding drops the course from the grid, so the sheet has nothing left to
+                    // describe and closes. Straight through `dismiss`, with no suspension in the
+                    // path: the parent clears its selection and this composable — dialog window
+                    // and all — goes away with it.
+                    if (!course.hidden) dismiss()
                 },
             )
             VGap()
