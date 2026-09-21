@@ -1,6 +1,5 @@
 package com.ranorac.tjtimetable.ui.timetable
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,7 +21,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -80,30 +78,46 @@ fun CourseDetailSheet(
     val scope = rememberCoroutineScope()
     val hue = CourseHues[course.effectiveColorIndex % CourseHues.size]
 
-    // Every dismissal runs through the sheet's own hide animation. Removing an
-    // *expanded* ModalBottomSheet from composition instead leaves its dialog window
-    // behind, and that orphan window keeps swallowing the back gesture — which is
-    // what made the app impossible to leave with the back button.
+    // The ONE way out. Every dismissal — the 关闭 button, the scrim, the back gesture — goes
+    // through this, so the sheet always runs its hide animation before the parent drops it from
+    // composition. Removing an expanded ModalBottomSheet from composition instead leaves its
+    // dialog window behind, and that orphan window swallows the back gesture: the app then
+    // cannot be left at all. `closeRequested` makes the close idempotent, so a double tap or a
+    // back gesture during the animation cannot start two hides.
+    var closeRequested by remember { mutableStateOf(false) }
     val close: () -> Unit = {
-        scope.launch {
-            sheetState.hide()
-            onDismiss()
+        if (!closeRequested) {
+            closeRequested = true
+            scope.launch {
+                sheetState.hide()
+                onDismiss()
+            }
         }
     }
 
-    // Back is owned by this sheet and only while it exists: `shouldDismissOnBackPress`
-    // is switched off below so there is exactly one consumer. Once the sheet is gone
-    // nothing intercepts back any more, so the system can finish the activity again.
-    BackHandler { close() }
+    // Back is left to Material3: `ModalBottomSheet` installs its own back callback by default
+    // (`shouldDismissOnBackPress = true`) and routes it to `onDismissRequest`. That is the one
+    // path every Compose app uses, it is exercised by the framework's own tests, and it needs no
+    // second consumer.
+    //
+    // The previous version replaced it with a local `BackHandler` plus
+    // `shouldDismissOnBackPress = false`. That is a smaller window than it looks: the handler is
+    // installed from inside the sheet's *dialog* content, so it registers against the dialog's
+    // lifecycle owner rather than the Activity's — and the system back gesture consulted nobody,
+    // which is exactly the reported symptom (the sheet could only be swiped away, never backed
+    // out of). Two owners racing for one gesture is worse than one owner doing it properly.
 
     // Seeded per course; re-seeding on every recomposition would fight typing.
     var note by remember(course.id) { mutableStateOf(course.note.orEmpty()) }
     val noteDirty = note != course.note.orEmpty()
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        // Back, scrim tap and drag-down all arrive here, and all of them end in the same `close`,
+        // so the sheet always runs its hide animation instead of being ripped out of the
+        // composition while still expanded — which is what leaves an orphan dialog window behind
+        // that swallows every later gesture.
+        onDismissRequest = close,
         sheetState = sheetState,
-        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
         containerColor = gh.canvasDefault,
         contentColor = gh.fgDefault,
     ) {

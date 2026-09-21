@@ -3,6 +3,7 @@ package com.ranorac.tjtimetable.widget
 import com.ranorac.tjtimetable.domain.ClassOccurrence
 import com.ranorac.tjtimetable.domain.Course
 import com.ranorac.tjtimetable.domain.CourseSession
+import com.ranorac.tjtimetable.domain.TermCalendar
 import com.ranorac.tjtimetable.domain.WeekPattern
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -151,5 +152,83 @@ class WidgetUpcomingTest {
         // There is no instant to wake up at, so the widget must not schedule one.
         val unknown = occurrence("体育", start = null, end = null)
         assertNull(nextBoundary(listOf(unknown), LocalTime.NOON))
+    }
+
+    // ---------------------------------------------------- empty-state wording
+
+    private val term = TermCalendar(
+        calendarId = "122",
+        name = "2025-2026学年度第2学期",
+        year = 2025,
+        term = 2,
+        firstWeekStart = monday,
+        endDate = monday.plusWeeks(17),
+        totalWeeks = 18,
+    )
+
+    @Test
+    fun `finishing the day's classes is not the same as having none`() {
+        // The distinction that was asked for, and the one the widget got wrong: after the last
+        // lecture it said 今天没有课 with a 无课 count, to a student who had just walked out of one.
+        // 今天的课上完了 and 今天没有课 are different sentences and must stay different.
+        assertEquals(
+            IdleState.CLASSES_DONE,
+            idleState(monday, term, week = 1, todayClasses = listOf(finished, running, later)),
+        )
+        assertEquals(
+            IdleState.NO_CLASS,
+            idleState(monday, term, week = 1, todayClasses = emptyList()),
+        )
+    }
+
+    @Test
+    fun `a genuinely free day is still 今天没有课`() {
+        // A Saturday inside the term: a teaching week exists but nothing falls on the date. That
+        // is 没课, not 上完了, and the count must stay 无课.
+        val saturday = monday.plusDays(5)
+        assertEquals(
+            IdleState.NO_CLASS,
+            idleState(saturday, term, week = 1, todayClasses = emptyList()),
+        )
+    }
+
+    @Test
+    fun `holidays and breaks outrank having classes`() {
+        // `week == null` means 假期/寒暑假, when nothing runs — a list left over from elsewhere
+        // must not be reported as 上完了.
+        assertEquals(
+            IdleState.VACATION,
+            idleState(monday, term, week = null, todayClasses = listOf(finished)),
+        )
+    }
+
+    @Test
+    fun `before and after the term are their own states`() {
+        assertEquals(
+            IdleState.NOT_STARTED,
+            idleState(monday.minusDays(3), term, week = null, todayClasses = emptyList()),
+        )
+        // `weekEnd(totalWeeks)` — not `endDate` — is the last teaching day; the fixture's
+        // `endDate` is the start of the final week, so comparing against it would misreport the
+        // last week as over.
+        assertEquals(
+            IdleState.TERM_OVER,
+            idleState(term.weekEnd(term.totalWeeks).plusDays(1), term, week = null, todayClasses = emptyList()),
+        )
+    }
+
+    @Test
+    fun `the last teaching day still counts as 上完了`() {
+        // Boundary: the final day of term is a teaching day, so a finished class on it is 上完了,
+        // not 本学期已结束.
+        val last = term.weekEnd(term.totalWeeks)
+        assertEquals(
+            IdleState.CLASSES_DONE,
+            idleState(last, term, week = term.totalWeeks, todayClasses = listOf(finished)),
+        )
+        assertEquals(
+            IdleState.TERM_OVER,
+            idleState(last.plusDays(1), term, week = null, todayClasses = emptyList()),
+        )
     }
 }

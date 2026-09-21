@@ -170,9 +170,9 @@ private fun TimetableRoute(container: AppContainer, onOpenLogin: () -> Unit) {
     )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // The tapped occurrence is held as a snapshot, but the sheet always renders
-    // the LIVE course looked up by id — otherwise a colour or note change would
-    // immediately be overwritten by stale data in the snapshot.
+    // The tapped occurrence is held as a snapshot, but the sheet always renders the LIVE course
+    // looked up by id — otherwise a colour or note change would immediately be overwritten by
+    // stale data in the snapshot.
     var selected by remember { mutableStateOf<ClassOccurrence?>(null) }
 
     TimetableScreen(
@@ -196,6 +196,21 @@ private fun TimetableRoute(container: AppContainer, onOpenLogin: () -> Unit) {
     LaunchedEffect(selected, timetable, course) {
         if (selected != null && timetable != null && course == null) selected = null
     }
+
+    // Back closes the sheet, and it is registered HERE rather than inside the sheet on purpose.
+    //
+    // `CourseDetailSheet` renders into a `ModalBottomSheet`, which is a **dialog window** with
+    // its own lifecycle owner. A `BackHandler` installed from the sheet's content therefore
+    // registers against that dialog rather than the Activity — and the reported symptom was
+    // exactly a sheet that could be swiped away but never backed out of, with the gesture
+    // landing on nobody. This composable, by contrast, belongs to the Activity's own
+    // composition, so `MainActivity`'s `OnBackPressedDispatcher` definitely owns it.
+    //
+    // Disabled while no sheet is open, so back falls through to the system (which finishes the
+    // activity) exactly as before.
+    val sheetOpen = course != null
+    BackHandler(enabled = sheetOpen) { selected = null }
+
     if (timetable != null && course != null) {
         CourseDetailSheet(
             course = course,

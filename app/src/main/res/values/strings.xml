@@ -14,6 +14,8 @@
     <string name="widget_state_no_courses">本学期还没有课程</string>
     <string name="widget_state_no_courses_hint">点按打开 TJ课表，重新导入或添加课程</string>
     <string name="widget_state_no_class">今天没有课 🎉</string>
+    <!-- 今天有课但都上完了：与「今天没有课」是两件事，不能都写成「无课」 -->
+    <string name="widget_state_classes_done">今天的课上完了 🎉</string>
     <string name="widget_state_not_started">还没开学 🎒</string>
     <string name="widget_state_vacation">假期中 🌴</string>
     <string name="widget_state_term_over">本学期已结束 🏁</string>
@@ -22,6 +24,7 @@
     <string name="widget_week">第 %1$d 周</string>
     <string name="widget_count_courses">%1$d 门课</string>
     <string name="widget_count_none">无课</string>
+    <string name="widget_count_done">已上完 %1$d 门</string>
     <string name="widget_chip_running">进行中</string>
     <string name="widget_chip_makeup">补课</string>
     <string name="widget_running_remaining">进行中 · 还剩 %1$d 分钟</string>

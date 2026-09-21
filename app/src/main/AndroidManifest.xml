@@ -34,12 +34,25 @@
         android:theme="@style/Theme.TJtimetable"
         tools:ignore="UnusedAttribute">
 
+        <!--
+            launchMode="singleTop" 不是一个偏好，而是必须的。
+
+            小组件、上课提醒、桌面图标三条路都会 startActivity 打开这里；如果没有这个声明，
+            每次点按都会新建一个 Activity 实例叠在原来的上面。学生「从小组件点开 → 回桌面 →
+            再点开」就会堆出好几层课表，必须一层层按返回退出——这正是被报告的那个 bug。
+
+            singleTop 让「已经在栈顶」的实例直接复用（走 onNewIntent），而不是再建一个。
+            它只影响栈顶复用，不像 singleTask 那样会把别的任务拉进来，所以对返回栈其余部分
+            的行为没有副作用。三个入口的 Intent 也都带了 NEW_TASK|CLEAR_TOP|SINGLE_TOP，
+            作为双保险：即使将来这里被改回 standard，也不会再出现层叠。
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
-            android:theme="@style/Theme.TJtimetable">
+            android:theme="@style/Theme.TJtimetable"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

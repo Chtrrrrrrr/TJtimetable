@@ -511,9 +511,15 @@ private suspend fun buildPayload(context: Context): WidgetPayload? {
     val rows = occurrences.take(MAX_PAYLOAD_ROWS).map { it.toWidgetRow() }
 
     if (rows.isEmpty()) {
-        // Nothing left today, or nothing at all: `idlePayload` says 今天没有课 and, crucially,
-        // still names the next class — which for a finished afternoon is the useful answer.
-        return idlePayload(context, timetable, today, now, week, allToday.size)
+        // Two situations that used to be reported identically, and one of them was simply wrong:
+        //
+        //  - classes WERE scheduled today and every one of them has finished → 今天的课上完了;
+        //  - there was nothing scheduled today at all → 今天没有课.
+        //
+        // Saying 今天没有课 while `countLabel` said 无课, to a student who has just walked out of
+        // a lecture, reads as the widget having lost the timetable. `allToday` is the unfiltered
+        // list, so whether it is empty is exactly the distinction.
+        return idlePayload(context, timetable, today, now, week, allToday)
     }
 
     // When classes remain today they are already on screen, and the renderer names the running or
@@ -604,7 +610,13 @@ private fun emptyTermPayload(context: Context) = WidgetPayload(
 )
 
 /**
- * 今天没有课：假期、周末、节假日，或者学期还没开始/已经结束。
+ * 今天没有可上的课。
+ *
+ * 两种情形必须分开写，这是明确要求的：
+ *  - [todayClasses] 非空 → 今天有课、但都上完了：「今天的课上完了」，数量写「已上完 N 门」；
+ *  - [todayClasses] 为空 → 今天本来就没课（假期/周末/停课/学期外）：「今天没有课」，数量写「无课」。
+ *
+ * 把第一种写成「今天没有课 / 无课」会让学生以为课程表丢了——他刚下课，明明上过课。
  *
  * 无论哪种情况都尽量把「下一节课」说出来——这是空状态下最有用的信息。
  */
@@ -614,40 +626,79 @@ private fun idlePayload(
     today: LocalDate,
     now: LocalTime,
     week: Int?,
-    classCount: Int,
+    /** 今天**未经过滤**的全部课程；用来区分「上完了」与「本来就没课」。 */
+    todayClasses: List<ClassOccurrence>,
 ): WidgetPayload {
     val term = timetable.term
     val lastTeachingDay = term.weekEnd(term.totalWeeks)
     val notStarted = today.isBefore(term.firstWeekStart)
 
-    val headline = when {
-        notStarted -> context.getString(R.string.widget_state_not_started)
-        today.isAfter(lastTeachingDay) -> context.getString(R.string.widget_state_term_over)
-        week == null -> context.getString(R.string.widget_state_vacation)
-        else -> context.getString(R.string.widget_state_no_class)
-    }
+    val state = idleState(today, term, week, todayClasses)
 
+    // The next class must still be in the FUTURE: `nextOccurrence` takes `now` and skips a class
+    // whose start has passed, so a finished morning does not make this point backwards.
     val next = TimetableResolver.nextOccurrence(timetable, today, now)
-    val subline = when {
-        next != null -> context.getString(R.string.widget_next_later, describeNext(next, today))
-        notStarted -> context.getString(
-            R.string.widget_days_to_start,
-            ChronoUnit.DAYS.between(today, term.firstWeekStart).coerceAtLeast(0),
-        )
-        else -> context.getString(R.string.widget_no_upcoming)
-    }
 
     return WidgetPayload(
         state = WidgetPayload.STATE_NO_CLASS,
         weekLabel = week?.let { context.getString(R.string.widget_week, it) },
         dayLabel = "周${today.dayOfWeek.cn()}",
-        countLabel = context.getString(R.string.widget_count_none),
-        headline = headline,
-        subline = subline,
+        // 「已上完 N 门」 rather than 「无课」: the day was not empty.
+        countLabel = when (state) {
+            IdleState.CLASSES_DONE -> context.getString(R.string.widget_count_done, todayClasses.size)
+            else -> context.getString(R.string.widget_count_none)
+        },
+        headline = context.getString(
+            when (state) {
+                IdleState.NOT_STARTED -> R.string.widget_state_not_started
+                IdleState.TERM_OVER -> R.string.widget_state_term_over
+                IdleState.VACATION -> R.string.widget_state_vacation
+                IdleState.CLASSES_DONE -> R.string.widget_state_classes_done
+                IdleState.NO_CLASS -> R.string.widget_state_no_class
+            },
+        ),
+        subline = when {
+            next != null -> context.getString(R.string.widget_next_later, describeNext(next, today))
+            notStarted -> context.getString(
+                R.string.widget_days_to_start,
+                ChronoUnit.DAYS.between(today, term.firstWeekStart).coerceAtLeast(0),
+            )
+            else -> context.getString(R.string.widget_no_upcoming)
+        },
         rows = emptyList(),
-        total = classCount,
+        total = todayClasses.size,
         epochDay = today.toEpochDay(),
     )
+}
+
+/**
+ * Why the widget has nothing to show today.
+ *
+ * Split out as a value so the distinction between [CLASSES_DONE] and [NO_CLASS] is testable
+ * rather than buried in a `when` inside a composable — the previous version conflated them, and
+ * telling a student who has just finished a lecture that 今天没有课 (with a 无课 count) reads as
+ * the timetable having been lost.
+ */
+internal enum class IdleState { NOT_STARTED, TERM_OVER, VACATION, CLASSES_DONE, NO_CLASS }
+
+/**
+ * Decides which empty state applies.
+ *
+ * [CLASSES_DONE] requires three things: classes really were scheduled today, today is inside the
+ * teaching term, and today belongs to a teaching week. Outside those, the classes in
+ * [todayClasses] are not today's — so it stays [NO_CLASS].
+ */
+internal fun idleState(
+    today: LocalDate,
+    term: com.ranorac.tjtimetable.domain.TermCalendar,
+    week: Int?,
+    todayClasses: List<ClassOccurrence>,
+): IdleState = when {
+    today.isBefore(term.firstWeekStart) -> IdleState.NOT_STARTED
+    today.isAfter(term.weekEnd(term.totalWeeks)) -> IdleState.TERM_OVER
+    week == null -> IdleState.VACATION
+    todayClasses.isNotEmpty() -> IdleState.CLASSES_DONE
+    else -> IdleState.NO_CLASS
 }
 
 private fun ClassOccurrence.toWidgetRow(): WidgetRow = WidgetRow(
