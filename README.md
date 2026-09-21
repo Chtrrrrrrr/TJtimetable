@@ -6,7 +6,6 @@
 ![minSdk](https://img.shields.io/badge/minSdk-26-orange)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF)
 ![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)
-![tests](https://img.shields.io/badge/tests-540%20passed-success)
 ![Vibe%20Coded](https://img.shields.io/badge/vibe--coded-yes-ff69b4.svg)
 
 > 同济大学手机课表应用
