@@ -58,6 +58,10 @@ class AppContainer(context: Context) {
             // change shows up on the launcher immediately, instead of waiting for
             // the 30-minute updatePeriodMillis tick.
             TimetableWidget.refresh(appContext)
+            // The widget also hides classes that have finished, so the next boundary has to be
+            // re-armed against the new timetable — otherwise it would tick at a moment that no
+            // longer exists in it.
+            TimetableWidget.scheduleNextBoundary(appContext)
             // Re-arm reminders: the next class may have changed entirely.
             refreshReminders()
         }

@@ -1,18 +1,16 @@
 # =====================================================================
 # TJ课表 · TJtimetable
-# 原则：只提交"个性化内容"——手写代码 / 构建配置 / 文档 / Room schema。
-#       凡是能用标准流程重新下载、或由脚本自动再生的，一律排除。
-# =====================================================================
+# 原则：只提交"个性化内容"——手写代�?/ 构建配置 / 文档 / Room schema�?#       凡是能用标准流程重新下载、或由脚本自动再生的，一律排除�?# =====================================================================
 
-# ---- 自包含工具链（tools/dev/toolchain.ps1 可重建，约 4 GB）----
+# ---- 自包含工具链（tools/dev/toolchain.ps1 可重建，�?4 GB�?---
 .toolchain/
 
-# ---- 本机调研/抓取缓存与 agent 过程产物 ----
+# ---- 本机调研/抓取缓存�?agent 过程产物 ----
 .probe/
 .pae/
 .agent-teams/
 
-# ---- 本机真实数据：含姓名/学号/登录态，绝不允许进入版本库 ----
+# ---- 本机真实数据：含姓名/学号/登录态，绝不允许进入版本�?----
 示例.json
 *示例*.json
 *.local.json
@@ -41,7 +39,7 @@ resources.txt
 *.hprof
 hs_err_pid*
 
-# ---- 机器相关配置（由 tools/dev/toolchain.ps1 生成）----
+# ---- 机器相关配置（由 tools/dev/toolchain.ps1 生成�?---
 local.properties
 
 # ---- 签名与密钥：绝不提交 ----
@@ -54,7 +52,7 @@ keystore.properties
 signing.properties
 secrets.properties
 
-# ---- IDE / 编辑器 ----
+# ---- IDE / 编辑�?----
 .idea/
 *.iml
 *.iws
@@ -66,7 +64,7 @@ node_modules/
 npm-debug.log*
 yarn-error.log*
 
-# ---- 日志与临时/辅助文件 ----
+# ---- 日志与临�?辅助文件 ----
 *.log
 *.err
 *.tmp
@@ -81,3 +79,7 @@ yarn-error.log*
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# ---- Robolectric ɳ���ڵ���ʱ home ����������ӳ�䣨�� build.gradle.kts ���ɣ�----
+.robolectric-home/
+.robolectric-tmp/

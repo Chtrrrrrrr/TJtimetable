@@ -50,6 +50,11 @@ import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
 import com.ranorac.tjtimetable.MainActivity
 import com.ranorac.tjtimetable.R
 import com.ranorac.tjtimetable.TjApplication
@@ -65,9 +70,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.time.Duration
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.temporal.ChronoUnit
+import java.util.concurrent.TimeUnit
 
 /**
  * 今日课程小组件。
@@ -142,6 +150,46 @@ class TimetableWidget : GlanceAppWidget() {
             TimetableWidget().updateAll(appContext)
         }
 
+        /**
+         * Arms a one-shot update for the next moment the widget's content changes by itself.
+         *
+         * Called from the launcher tick and from every in-app change, so the item is always
+         * aimed at the current timetable; [ExistingWorkPolicy.REPLACE] is what keeps exactly one
+         * pending item instead of a growing queue.
+         */
+        fun scheduleNextBoundary(context: Context) {
+            val appContext = context.applicationContext
+            RefreshScope.launch {
+                try {
+                    val application = appContext as? TjApplication ?: return@launch
+                    val timetable = application.container.repository.observeTimetable().first()
+                        ?: return@launch
+                    val today = LocalDate.now()
+                    val now = LocalTime.now()
+                    val boundary = nextBoundary(
+                        TimetableResolver.occurrencesForDate(timetable, today),
+                        now,
+                    ) ?: run {
+                        // Nothing left today; cancel so a stale item cannot fire at midnight.
+                        WorkManager.getInstance(appContext).cancelUniqueWork(BOUNDARY_WORK)
+                        return@launch
+                    }
+                    val delay = Duration.between(now, boundary).toMillis().coerceAtLeast(0L)
+                    WorkManager.getInstance(appContext).enqueueUniqueWork(
+                        BOUNDARY_WORK,
+                        ExistingWorkPolicy.REPLACE,
+                        OneTimeWorkRequestBuilder<WidgetRefreshWorker>()
+                            .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+                            .build(),
+                    )
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (error: Throwable) {
+                    Log.w(TAG, "武装小组件边界刷新失败", error)
+                }
+            }
+        }
+
         private suspend fun refreshAll(context: Context) {
             // null = 读库失败，保留每个小组件已有的 state（并沿用其内容重画）。
             val payload = buildPayload(context)
@@ -156,10 +204,30 @@ class TimetableWidget : GlanceAppWidget() {
 }
 
 /**
- * 小组件的 [android.appwidget.AppWidgetProvider]。
+ * One-shot work that re-renders the widget the moment its contents change by themselves.
  *
- * 基类会把已存的 state 重画一遍；这里额外调一次 [TimetableWidget.refresh]，
- * 因为「正在进行 / 下一节」和当天课表都会变，光重画旧数据不够。
+ * WorkManager has no cron and `updatePeriodMillis` cannot go below 30 minutes, so the widget
+ * arms a single delayed item for the next class boundary and each run arms the following one —
+ * the same shape as the class reminders, for the same reason. It does not depend on the reminder
+ * setting, because the widget being correct is not conditional on reminders being enabled.
+ */
+class WidgetRefreshWorker(
+    appContext: Context,
+    params: WorkerParameters,
+) : CoroutineWorker(appContext, params) {
+
+    override suspend fun doWork(): Result {
+        TimetableWidget.refresh(applicationContext)
+        TimetableWidget.scheduleNextBoundary(applicationContext)
+        return Result.success()
+    }
+}
+
+/**
+ * Fired by the launcher's 30-minute tick and by every in-app change.
+ *
+ * The base class re-renders the stored state, which is not enough on its own: "still to come" and
+ * "next class" both move with the clock, so the payload is rebuilt and the next boundary armed.
  */
 class TimetableWidgetReceiver : GlanceAppWidgetReceiver() {
 
@@ -172,6 +240,7 @@ class TimetableWidgetReceiver : GlanceAppWidgetReceiver() {
     ) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
         TimetableWidget.refresh(context)
+        TimetableWidget.scheduleNextBoundary(context)
     }
 }
 
@@ -210,6 +279,9 @@ private const val TAG = "TimetableWidget"
 
 /** 一天最多带几行到小组件里，多出来的用数量提示。 */
 private const val MAX_PAYLOAD_ROWS = 8
+
+/** Unique WorkManager name for the next class-boundary re-render. */
+private const val BOUNDARY_WORK = "tj_widget_boundary"
 
 /**
  * The sizes the widget will render at.
@@ -427,18 +499,41 @@ private suspend fun buildPayload(context: Context): WidgetPayload? {
 
     val today = LocalDate.now()
     val now = LocalTime.now()
-    val occurrences = TimetableResolver.occurrencesForDate(timetable, today)
+    val allToday = TimetableResolver.occurrencesForDate(timetable, today)
     val week = timetable.term.weekOf(today)
+
+    // Only what is still relevant: the class in progress and everything after it. A widget is
+    // glanced at, not read — three lines spent on lectures that already finished push the one
+    // thing the student opened it for off the bottom, and by the afternoon the widget was
+    // entirely historical. A class counts as finished once it has ENDED, so it stays visible
+    // for its whole duration (and shifts up to "进行中" rather than vanishing at its start).
+    val occurrences = upcomingOnly(allToday, now)
     val rows = occurrences.take(MAX_PAYLOAD_ROWS).map { it.toWidgetRow() }
 
-    if (rows.isEmpty()) return idlePayload(context, timetable, today, now, week, occurrences.size)
+    if (rows.isEmpty()) {
+        // Nothing left today, or nothing at all: `idlePayload` says 今天没有课 and, crucially,
+        // still names the next class — which for a finished afternoon is the useful answer.
+        return idlePayload(context, timetable, today, now, week, allToday.size)
+    }
 
-    // 今天的课上完之后看下一节：从明天开始找，避免渲染时还要判断“今天还有没有课”。
-    val nextAfterToday = TimetableResolver.nextOccurrence(
-        timetable = timetable,
-        from = today.plusDays(1),
-        now = LocalTime.MIDNIGHT,
-    )
+    // When classes remain today they are already on screen, and the renderer names the running or
+    // next one from the rows themselves — a footer would only repeat it. So the footer is left
+    // for the case the rows cannot cover: nothing left today, where the next class is on another
+    // day and would otherwise be invisible. `null` here means "the rows say it".
+    val nextToday = occurrences.firstOrNull { occurrence ->
+        val start = occurrence.startTime
+        start != null && LocalDateTime.of(occurrence.date, start).isAfter(LocalDateTime.of(today, now))
+    }
+    val nextAfterToday = if (nextToday != null) {
+        null
+    } else {
+        TimetableResolver.nextOccurrence(
+            timetable = timetable,
+            from = today.plusDays(1),
+            now = LocalTime.MIDNIGHT,
+        )
+    }
+
     return WidgetPayload(
         state = WidgetPayload.STATE_CLASSES,
         weekLabel = week?.let { context.getString(R.string.widget_week, it) },
@@ -446,12 +541,52 @@ private suspend fun buildPayload(context: Context): WidgetPayload? {
         countLabel = context.getString(R.string.widget_count_courses, occurrences.size),
         footer = nextAfterToday?.let {
             context.getString(R.string.widget_next_later, describeNext(it, today))
-        } ?: context.getString(R.string.widget_no_upcoming),
+        },
         rows = rows,
         total = occurrences.size,
         epochDay = today.toEpochDay(),
     )
 }
+
+/**
+ * Drops the classes that have already finished, keeping the one in progress and everything after.
+ *
+ * A class with no known clock time cannot be ordered against `now`, and hiding it would be a
+ * silent omission — the failure mode this app avoids everywhere else — so it is kept.
+ *
+ * Kept `internal` and pure so the rule is pinned by a plain JVM test rather than by reading the
+ * widget on a phone.
+ */
+internal fun upcomingOnly(
+    occurrences: List<ClassOccurrence>,
+    now: LocalTime,
+): List<ClassOccurrence> = occurrences.filter { occurrence ->
+    val end = occurrence.endTime ?: return@filter true
+    !end.isBefore(now)
+}
+
+/**
+ * The next moment the widget's content changes on its own.
+ *
+ * Filtering finished classes makes the widget **time-critical**: left to the 30-minute
+ * `updatePeriodMillis` tick, a lecture that ended at 09:35 would still be listed at 10:05, which
+ * is the very thing the filter exists to prevent. The two moments that matter are a class ending
+ * (it must disappear) and the next one starting (it becomes 进行中), so this returns whichever
+ * comes first — and the widget arms a one-shot update for exactly then.
+ *
+ * Bounded to today: past the last class there is nothing to tick for, and a term-length horizon
+ * would keep a work item alive for months. The daily tick and every in-app change re-arm it.
+ *
+ * Pure and `internal` so the arithmetic is unit-tested; `null` means "nothing left to wait for".
+ */
+internal fun nextBoundary(
+    occurrences: List<ClassOccurrence>,
+    now: LocalTime,
+): LocalTime? = occurrences
+    .flatMap { listOfNotNull(it.startTime, it.endTime) }
+    // A boundary must still be ahead, or arming it would spin.
+    .filter { it.isAfter(now) }
+    .minOrNull()
 
 private fun notImportedPayload(context: Context) = WidgetPayload(
     state = WidgetPayload.STATE_NO_TIMETABLE,
