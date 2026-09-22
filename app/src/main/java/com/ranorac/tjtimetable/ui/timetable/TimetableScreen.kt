@@ -34,10 +34,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -69,6 +69,7 @@ import com.ranorac.tjtimetable.domain.PeriodSchedule
 import com.ranorac.tjtimetable.domain.TermCalendar
 import com.ranorac.tjtimetable.domain.Timetable
 import com.ranorac.tjtimetable.domain.TimetableResolver
+import com.ranorac.tjtimetable.domain.todayColumn
 import com.ranorac.tjtimetable.domain.weekdayColumns
 import com.ranorac.tjtimetable.ui.components.AccentBadge
 import com.ranorac.tjtimetable.ui.components.AttentionBadge
@@ -286,10 +287,12 @@ private fun WeekSelector(
                         modifier = Modifier.size(HEADER_ACTION_SIZE),
                     ) {
                         Icon(
-                            // A back arrow, not a calendar: the action *returns* to where the
-                            // student was, so it reads as navigation rather than as
-                            // "open a date picker".
-                            Icons.AutoMirrored.Filled.ArrowBack,
+                            // A home icon, by request. It also reads better than the back arrow
+                            // it replaces: the action goes *home* to the current week rather than
+                            // back one step, and the chevron pair beside it already owns
+                            // "back one week / forward one week" — so an arrow here meant two
+                            // different things depending on which button was pressed.
+                            Icons.Filled.Home,
                             contentDescription = "回到本周",
                             tint = gh.accentFg,
                         )
@@ -453,8 +456,10 @@ private fun WeekPage(
                 val unitHeight = (maxHeight / maxUnit)
                     .coerceIn(MIN_UNIT_HEIGHT, maxUnitHeight.coerceAtLeast(MIN_UNIT_HEIGHT))
                 val gridHeight = unitHeight * maxUnit
-                // -1 when today's weekday is not one of the visible columns (weekend hidden).
-                val todayColumn = days.indexOf(today.dayOfWeek)
+                // The column to tint is the one whose DATE is today — see [todayColumn] for why
+                // matching on the weekday tinted that weekday in every week and made the
+                // highlight meaningless. -1 (another week, or a hidden column) tints nothing.
+                val highlightedColumn = todayColumn(term, week, days, today)
 
                 Row(
                     modifier = Modifier
@@ -486,7 +491,7 @@ private fun WeekPage(
                                 drawGrid(
                                     highlight = gh.canvasSubtle,
                                     line = gh.borderMuted,
-                                    highlightColumn = todayColumn,
+                                    highlightColumn = highlightedColumn,
                                     unitHeight = unitHeight,
                                     maxUnit = maxUnit,
                                     columns = days.size,

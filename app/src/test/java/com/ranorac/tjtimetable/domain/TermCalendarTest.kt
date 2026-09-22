@@ -309,4 +309,72 @@ class TermCalendarTest {
         assertEquals(march, may)
         assertEquals(DayOfWeek.WEDNESDAY, march.first())
     }
+
+    // ------------------------------------------------------------------
+    // todayColumn — the highlight must follow the DATE, not the weekday
+    // ------------------------------------------------------------------
+
+    private val weekdays = DayOfWeek.entries.toList()
+
+    @Test
+    fun `the highlight sits on today's column in the current week`() {
+        // Week 1 is 3/2..3/8; Wednesday of it is the 4th.
+        val wednesday = LocalDate.of(2026, 3, 4)
+        assertEquals(
+            DayOfWeek.WEDNESDAY.ordinal,
+            todayColumn(spring2026, week = 1, days = weekdays, today = wednesday),
+        )
+    }
+
+    @Test
+    fun `no column is highlighted in a week that does not contain today`() {
+        // The reported bug: every week lit up its own Tuesday, because the highlight was matched
+        // on the weekday. Browsing to another week must tint nothing at all — otherwise the tint
+        // means "Tuesday" rather than "today".
+        val wednesday = LocalDate.of(2026, 3, 4) // week 1
+        for (otherWeek in listOf(2, 5, 9, 17)) {
+            assertEquals(
+                "week $otherWeek must not highlight anything",
+                -1,
+                todayColumn(spring2026, week = otherWeek, days = weekdays, today = wednesday),
+            )
+        }
+    }
+
+    @Test
+    fun `a hidden column means nothing is highlighted`() {
+        // Weekend hidden, and today is Saturday: there is no column to tint, and the grid draws
+        // no highlight rather than tinting the wrong day.
+        val saturday = LocalDate.of(2026, 3, 7)
+        val weekdaysOnly = listOf(
+            DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
+            DayOfWeek.THURSDAY, DayOfWeek.FRIDAY,
+        )
+        assertEquals(
+            -1,
+            todayColumn(spring2026, week = 1, days = weekdaysOnly, today = saturday),
+        )
+        // ... and it appears again as soon as the weekend is shown.
+        assertEquals(
+            DayOfWeek.SATURDAY.ordinal,
+            todayColumn(spring2026, week = 1, days = weekdays, today = saturday),
+        )
+    }
+
+    @Test
+    fun `every weekday of a week is highlighted on its own date and no other`() {
+        // Exhaustive over a whole week: exactly one column lights up per date, and the same
+        // weekday in the neighbouring weeks stays dark. This is the shape the bug violated.
+        for (offset in 0L..6L) {
+            val date = LocalDate.of(2026, 3, 2).plusDays(offset)
+            val week = spring2026.weekOf(date)!!
+            val hit = todayColumn(spring2026, week = week, days = weekdays, today = date)
+            assertEquals("date $date", offset.toInt(), hit)
+
+            val before = todayColumn(spring2026, week = week - 1, days = weekdays, today = date)
+            val after = todayColumn(spring2026, week = week + 1, days = weekdays, today = date)
+            assertEquals("date $date must not tint the previous week", -1, before)
+            assertEquals("date $date must not tint the next week", -1, after)
+        }
+    }
 }

@@ -127,3 +127,24 @@ fun weekdayColumns(
     if (index <= 0) return base
     return base.drop(index) + base.take(index)
 }
+
+/**
+ * Index into [days] of the column that *is* today, or -1 when today is not in this week.
+ *
+ * The highlight has to compare the resolved **date**, never the weekday. Matching on
+ * `today.dayOfWeek` tints that weekday in every week the student pages to — so a Tuesday looked
+ * highlighted in week 9 as well, and the tint said "Tuesday" instead of "today" and stopped
+ * meaning anything. Keyed on the date it appears in the current week and nowhere else.
+ *
+ * -1 covers the two cases where nothing should be tinted: another week entirely, and today being
+ * a column the grid is hiding (weekend hidden).
+ *
+ * In `domain` for the same reason as [weekdayColumns]: it is pure date semantics that the header
+ * and the grid both depend on, and it is worth testing without Compose.
+ */
+fun todayColumn(
+    term: TermCalendar,
+    week: Int,
+    days: List<DayOfWeek>,
+    today: LocalDate,
+): Int = days.indexOfFirst { term.dateOf(week, it) == today }
