@@ -283,7 +283,7 @@ class OtherScreensRenderTest {
         compose.onNodeWithText("导航").assertExists()
         compose.onNodeWithText("常用网址").assertExists()
 
-        listOf("1系统", "canvas系统", "好课平台", "超星学习通/慕课", "智慧树/知到", "课堂派")
+        listOf("1系统", "canvas系统", "好课平台", "超星学习通/慕课", "智慧树/知到", "课堂派", "考试/作业")
             .forEach { title ->
                 compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(title))
                 compose.onNodeWithText(title).assertExists()

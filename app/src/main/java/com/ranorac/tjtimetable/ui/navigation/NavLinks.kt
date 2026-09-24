@@ -140,5 +140,15 @@ object NavLinks {
             defaultMode = NavOpenMode.WECHAT,
             supportedModes = listOf(NavOpenMode.WECHAT, NavOpenMode.BROWSER),
         ),
+        NavLink(
+            id = "exam-homework",
+            title = "考试/作业",
+            // A campus-LAN address over plain http. Nothing here needs the app's own network
+            // stack: the URL is only ever handed to the browser, so the app's cleartext
+            // policy is irrelevant and no permission is involved.
+            url = "http://192.168.174.220:2080/#/",
+            defaultMode = NavOpenMode.BROWSER,
+            supportedModes = listOf(NavOpenMode.BROWSER),
+        ),
     )
 }

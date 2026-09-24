@@ -29,10 +29,18 @@ class NavigationLinksTest {
     }
 
     @Test
-    fun `the six configured sites match the requested list`() {
-        assertEquals(6, NavLinks.ALL.size)
+    fun `the configured sites match the requested list`() {
+        assertEquals(7, NavLinks.ALL.size)
         assertEquals(
-            listOf("1系统", "canvas系统", "好课平台", "超星学习通/慕课", "智慧树/知到", "课堂派"),
+            listOf(
+                "1系统",
+                "canvas系统",
+                "好课平台",
+                "超星学习通/慕课",
+                "智慧树/知到",
+                "课堂派",
+                "考试/作业",
+            ),
             NavLinks.ALL.map { it.title },
         )
         assertEquals(
@@ -43,6 +51,7 @@ class NavigationLinksTest {
                 "https://mooc1-1.chaoxing.com",
                 "https://www.zhihuishu.com/",
                 "https://w.ketangpai.com/ktpCourse",
+                "http://192.168.174.220:2080/#/",
             ),
             NavLinks.ALL.map { it.url },
         )
@@ -54,6 +63,7 @@ class NavigationLinksTest {
                 NavOpenMode.BROWSER,
                 NavOpenMode.EXTERNAL_APP,
                 NavOpenMode.WECHAT,
+                NavOpenMode.BROWSER,
             ),
             NavLinks.ALL.map { it.defaultMode },
         )
