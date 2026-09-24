@@ -58,25 +58,42 @@ fun GitHubCard(
 ) {
     val gh = LocalGitHubColors.current
     val shape = RoundedCornerShape(8.dp)
-    var box = modifier
+
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (onClick != null && pressed) 0.97f else 1f,
+        animationSpec = tween(durationMillis = 90),
+        label = "cardPress",
+    )
+
+    // Two details here are load-bearing, and both were previously wrong:
+    //
+    //  - `fillMaxWidth` FIRST, so the card uses the full width it is given. A card that wraps
+    //    its own content makes two cards on the same page different widths (设置's 关于 card
+    //    was narrower than its neighbours) and it throws away the room a tablet actually has.
+    //
+    //  - `scale` OUTSIDE `clip`/`background`/`border`. Modifier order is nesting order, so a
+    //    scale placed after the background only shrinks the card's *contents* while the card
+    //    surface stays exactly where it was — at 0.985 that is invisible, which is why the
+    //    press animation appeared to be missing entirely.
+    val box = modifier
+        .fillMaxWidth()
+        .scale(scale)
         .clip(shape)
         .background(gh.canvasSubtle)
         .border(1.dp, gh.borderDefault, shape)
-
-    if (onClick != null) {
-        val interaction = remember { MutableInteractionSource() }
-        val pressed by interaction.collectIsPressedAsState()
-        // A subtle scale rather than a ripple: closer to GitHub's own feel, and
-        // it costs one float animation instead of an ink splash layer.
-        val scale by animateFloatAsState(
-            targetValue = if (pressed) 0.985f else 1f,
-            animationSpec = tween(durationMillis = 90),
-            label = "cardPress",
+        .then(
+            if (onClick != null) {
+                Modifier.clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    onClick = onClick,
+                )
+            } else {
+                Modifier
+            },
         )
-        box = box
-            .scale(scale)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-    }
 
     Column(modifier = box.padding(contentPadding), content = content)
 }

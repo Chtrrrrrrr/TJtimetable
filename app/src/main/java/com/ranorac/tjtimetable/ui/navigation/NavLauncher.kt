@@ -105,10 +105,14 @@ enum class NavStatus {
 /**
  * @param usedFallback true when the requested mode could not take the URL and a later
  *   attempt (the browser) did the work instead.
+ * @param detail what the attempt resolved to — the package actually launched, the scheme
+ *   used, or the failure reason. Surfaced in the UI so a launch is never a silent no-op
+ *   that has to be guessed at from the outside.
  */
 data class NavResult(
     val status: NavStatus,
     val usedFallback: Boolean = false,
+    val detail: String? = null,
 )
 
 /** Short human name for a mode, used in messages. */
@@ -129,7 +133,10 @@ fun NavResult.messageFor(link: NavLink, mode: NavOpenMode): String? = when (stat
         if (usedFallback) {
             "无法在${mode.shortLabel(link)}内直接打开网页，已改用浏览器打开"
         } else {
-            null
+            // Confirm what was actually launched. For an icon-only row of external-app
+            // buttons this is the only way the student (or I) can tell whether 「知到」 really
+            // started 知到 rather than silently doing nothing.
+            detail?.let { "已打开：$it" }
         }
     NavStatus.SUMMONED_APP ->
         "已把链接复制到剪贴板并打开${mode.shortLabel(link)}，粘贴即可访问" +
@@ -156,49 +163,72 @@ fun NavResult.messageFor(link: NavLink, mode: NavOpenMode): String? = when (stat
  */
 object NavLauncher {
 
+    /** An attempt that actually resolved, plus a one-line description of what it resolved to. */
+    private data class Resolved(val intent: Intent, val detail: String)
+
     fun open(context: Context, link: NavLink, mode: NavOpenMode): NavResult {
         val attempts = attemptsFor(link, mode)
+        var lastError: String? = null
         attempts.forEachIndexed { index, attempt ->
-            val intent = intentFor(context, attempt, link.url) ?: return@forEachIndexed
+            val resolved = resolve(context, attempt, link.url) ?: return@forEachIndexed
             try {
-                context.startActivity(intent)
+                context.startActivity(resolved.intent)
                 return when (attempt) {
                     // The app is up, but it never received the URL — hand the student the
                     // link so the summon still leads somewhere.
                     is NavAttempt.LaunchScheme -> {
                         copyToClipboard(context, link)
-                        NavResult(NavStatus.SUMMONED_APP, usedFallback = true)
+                        NavResult(NavStatus.SUMMONED_APP, usedFallback = true, detail = resolved.detail)
                     }
-                    else -> NavResult(NavStatus.OPENED, usedFallback = index > 0)
+                    else -> NavResult(
+                        NavStatus.OPENED,
+                        usedFallback = index > 0,
+                        detail = resolved.detail,
+                    )
                 }
-            } catch (_: ActivityNotFoundException) {
-                // This attempt cannot handle it; fall through to the next one.
-            } catch (_: SecurityException) {
+            } catch (e: ActivityNotFoundException) {
+                lastError = e.message
+            } catch (e: SecurityException) {
                 // Launching that package is not permitted on this device; try the next.
+                lastError = e.message
+            } catch (e: Exception) {
+                // Anything else (a malformed component, a dead process) must not take the
+                // whole app down just because a link could not be opened.
+                lastError = e.message
             }
         }
         return when (mode) {
             // Nothing could take the URL at all.
-            NavOpenMode.EXTERNAL_APP -> NavResult(NavStatus.UNAVAILABLE)
-            else -> NavResult(NavStatus.FAILED)
+            NavOpenMode.EXTERNAL_APP -> NavResult(NavStatus.UNAVAILABLE, detail = lastError)
+            else -> NavResult(NavStatus.FAILED, detail = lastError)
         }
     }
 
-    private fun intentFor(context: Context, attempt: NavAttempt, url: String): Intent? {
-        val intent = when (attempt) {
-            is NavAttempt.ViewUrlIn ->
-                Intent(Intent.ACTION_VIEW, Uri.parse(url)).setPackage(attempt.packageName)
+    private fun resolve(context: Context, attempt: NavAttempt, url: String): Resolved? {
+        val resolved = when (attempt) {
+            is NavAttempt.ViewUrlIn -> Resolved(
+                Intent(Intent.ACTION_VIEW, Uri.parse(url)).setPackage(attempt.packageName),
+                attempt.packageName,
+            )
             NavAttempt.ViewUrlAnywhere ->
-                Intent(Intent.ACTION_VIEW, Uri.parse(url))
-            is NavAttempt.LaunchApp ->
-                context.packageManager.getLaunchIntentForPackage(attempt.packageName)
+                Resolved(Intent(Intent.ACTION_VIEW, Uri.parse(url)), "系统浏览器")
+            is NavAttempt.LaunchApp -> {
+                val intent = context.packageManager.getLaunchIntentForPackage(attempt.packageName)
+                    ?: return null
+                Resolved(intent, attempt.packageName)
+            }
             is NavAttempt.LaunchScheme ->
-                Intent(Intent.ACTION_VIEW, Uri.parse(attempt.scheme))
-            is NavAttempt.LaunchAppMatching ->
-                matchingLaunchIntent(context, attempt.tokens)
+                Resolved(Intent(Intent.ACTION_VIEW, Uri.parse(attempt.scheme)), attempt.scheme)
+            is NavAttempt.LaunchAppMatching -> {
+                val packageName = matchingPackage(context, attempt.tokens) ?: return null
+                val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+                    ?: return null
+                Resolved(intent, packageName)
+            }
         }
         // The call always originates from the Compose host, never from the target app.
-        return intent?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+        resolved.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return resolved
     }
 
     /**
@@ -212,10 +242,10 @@ object NavLauncher {
      * `queryIntentActivities` only sees packages this app declared in `<queries>`, which is
      * why the manifest asks for the launcher intent.
      */
-    private fun matchingLaunchIntent(context: Context, tokens: List<String>): Intent? {
+    private fun matchingPackage(context: Context, tokens: List<String>): String? {
         if (tokens.isEmpty()) return null
         val pm = context.packageManager
-        val match = pm
+        return pm
             .queryIntentActivities(
                 Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),
                 0,
@@ -228,9 +258,9 @@ object NavLauncher {
                     packageName.contains(token, ignoreCase = true) ||
                         label.contains(token, ignoreCase = true)
                 }
-            } ?: return null
-        val packageName = match.activityInfo?.packageName ?: return null
-        return pm.getLaunchIntentForPackage(packageName)
+            }
+            ?.activityInfo
+            ?.packageName
     }
 
     private fun copyToClipboard(context: Context, link: NavLink) {
