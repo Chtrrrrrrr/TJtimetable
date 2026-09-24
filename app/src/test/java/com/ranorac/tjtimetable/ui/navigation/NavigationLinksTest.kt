@@ -82,14 +82,22 @@ class NavigationLinksTest {
     }
 
     @Test
-    fun `wechat and wecom are tried first, then degrade to the browser`() {
+    fun `wechat and wecom try the app, then summon it, then fall back to the browser`() {
         val link = NavLinks.ALL.first()
         assertEquals(
-            listOf(NavAttempt.ViewUrlIn(WECHAT_PACKAGE), NavAttempt.ViewUrlAnywhere),
+            listOf(
+                NavAttempt.ViewUrlIn(WECHAT_PACKAGE),
+                NavAttempt.LaunchScheme(WECHAT_SCHEME),
+                NavAttempt.ViewUrlAnywhere,
+            ),
             attemptsFor(link, NavOpenMode.WECHAT),
         )
         assertEquals(
-            listOf(NavAttempt.ViewUrlIn(WECOM_PACKAGE), NavAttempt.ViewUrlAnywhere),
+            listOf(
+                NavAttempt.ViewUrlIn(WECOM_PACKAGE),
+                NavAttempt.LaunchScheme(WECOM_SCHEME),
+                NavAttempt.ViewUrlAnywhere,
+            ),
             attemptsFor(link, NavOpenMode.WECOM),
         )
     }
@@ -97,16 +105,34 @@ class NavigationLinksTest {
     @Test
     fun `external app mode never silently opens a web page instead`() {
         val chaoxing = NavLinks.ALL.first { it.id == "chaoxing" }
-        assertEquals(
-            listOf<NavAttempt>(NavAttempt.LaunchApp("com.chaoxing.mobile")),
-            attemptsFor(chaoxing, NavOpenMode.EXTERNAL_APP),
+        val chaoxingAttempts = attemptsFor(chaoxing, NavOpenMode.EXTERNAL_APP)
+        assertTrue(
+            "no browser fallback may hide a missing app",
+            chaoxingAttempts.none { it is NavAttempt.ViewUrlAnywhere },
         )
-        // 知到 ships under more than one package name across releases, so all candidates
-        // are app launches and nothing else.
+        chaoxing.externalAppPackages.forEach {
+            assertTrue("$it should be tried", chaoxingAttempts.contains(NavAttempt.LaunchApp(it)))
+        }
+        // 知到 has shipped under several package names, so the chain ends with a
+        // name-fragment search rather than trusting one hard-coded guess — that guess being
+        // wrong is exactly why an installed 知到 reported itself as missing.
         val zhihuishu = NavLinks.ALL.first { it.id == "zhihuishu" }
-        val attempts = attemptsFor(zhihuishu, NavOpenMode.EXTERNAL_APP)
-        assertTrue(attempts.all { it is NavAttempt.LaunchApp })
-        assertEquals(zhihuishu.externalAppPackages.size, attempts.size)
+        val znAttempts = attemptsFor(zhihuishu, NavOpenMode.EXTERNAL_APP)
+        assertTrue(znAttempts.none { it is NavAttempt.ViewUrlAnywhere })
+        assertEquals(
+            NavAttempt.LaunchAppMatching(zhihuishu.externalAppMatchTokens),
+            znAttempts.last(),
+        )
+        assertTrue("the fragment search needs tokens", zhihuishu.externalAppMatchTokens.isNotEmpty())
+    }
+
+    @Test
+    fun `summoning the app tells the student the link went to the clipboard`() {
+        val link = NavLinks.ALL.first { it.id == "tj-1system" }
+        val message = NavResult(NavStatus.SUMMONED_APP)
+            .messageFor(link, NavOpenMode.WECOM)!!
+        assertTrue(message.contains("剪贴板"))
+        assertTrue(message.contains("企业微信"))
     }
 
     @Test

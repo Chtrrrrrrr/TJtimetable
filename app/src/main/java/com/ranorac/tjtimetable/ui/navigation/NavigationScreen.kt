@@ -1,17 +1,30 @@
 package com.ranorac.tjtimetable.ui.navigation
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -22,27 +35,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.ranorac.tjtimetable.ui.components.AccentBadge
 import com.ranorac.tjtimetable.ui.components.GitHubCard
-import com.ranorac.tjtimetable.ui.components.GitHubPrimaryButton
-import com.ranorac.tjtimetable.ui.components.GitHubSecondaryButton
 import com.ranorac.tjtimetable.ui.components.PageHeader
 import com.ranorac.tjtimetable.ui.components.SCREEN_HORIZONTAL_PADDING
 import com.ranorac.tjtimetable.ui.components.SECTION_GAP
-import com.ranorac.tjtimetable.ui.components.VGap
+import com.ranorac.tjtimetable.ui.components.pageContentWidth
 import com.ranorac.tjtimetable.ui.theme.LocalGitHubColors
 import kotlinx.coroutines.launch
 
 /**
  * The 导航 page: a vertical list of 常用网址, one card per site.
  *
- * Every card renders a button for **every** way it can be opened — the default one first
- * and emphasised — so the choice is always the student's. Nothing here decides silently.
+ * Each card is a single row — name and URL on the left, one icon button per way of opening
+ * it on the right — so the page stays scannable. Tapping the **name** opens the link with
+ * that site's default method; the icons are the explicit per-method routes.
  *
  * @param onOpen performs the launch. Injected rather than called directly so the screen
- *   renders (and is asserted on) without a device, and so the page never touches
- *   `Context` itself.
+ *   renders (and is asserted on) without a device.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,36 +70,40 @@ fun NavigationScreen(
 
     Scaffold(
         containerColor = gh.canvasDefault,
-        // Same reason as 设置/调休: PageHeader owns the status-bar inset and MainActivity's
-        // bottom bar owns the navigation inset, so Scaffold's default would add the
-        // navigation bar's height a second time as a dead band.
+        // PageHeader owns the status-bar inset and MainActivity's bottom bar owns the
+        // navigation inset, so Scaffold's default would add the latter twice.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            // Identical component, height and inset as the other three pages.
+            // Identical component, height and inset as the other pages.
             PageHeader(title = "导航", subtitle = "常用网址")
         },
     ) { padding ->
-        LazyColumn(
+        Box(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(
-                start = SCREEN_HORIZONTAL_PADDING,
-                end = SCREEN_HORIZONTAL_PADDING,
-                top = 8.dp,
-                bottom = 32.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(SECTION_GAP),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            items(links, key = { it.id }) { link ->
-                NavLinkCard(
-                    link = link,
-                    onOpen = { mode ->
-                        val result = onOpen(link, mode)
-                        result.messageFor(link, mode)?.let { text ->
-                            scope.launch { snackbar.showSnackbar(text) }
-                        }
-                    },
-                )
+            LazyColumn(
+                modifier = Modifier.pageContentWidth().fillMaxHeight(),
+                contentPadding = PaddingValues(
+                    start = SCREEN_HORIZONTAL_PADDING,
+                    end = SCREEN_HORIZONTAL_PADDING,
+                    top = 8.dp,
+                    bottom = 32.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(SECTION_GAP),
+            ) {
+                items(links, key = { it.id }) { link ->
+                    NavLinkCard(
+                        link = link,
+                        onOpen = { mode ->
+                            val result = onOpen(link, mode)
+                            result.messageFor(link, mode)?.let { text ->
+                                scope.launch { snackbar.showSnackbar(text) }
+                            }
+                        },
+                    )
+                }
             }
         }
     }
@@ -94,50 +112,88 @@ fun NavigationScreen(
 @Composable
 private fun NavLinkCard(link: NavLink, onOpen: (NavOpenMode) -> Unit) {
     val gh = LocalGitHubColors.current
-    val actions = link.actions()
 
     GitHubCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
+            // The name is the default route: tapping the text opens the link the way that
+            // site is normally opened, so the common case needs no aiming.
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { onOpen(link.defaultMode) }
+                    .padding(vertical = 2.dp),
+            ) {
                 Text(
-                    link.title,
+                    text = link.title,
                     style = MaterialTheme.typography.titleMedium,
                     color = gh.fgDefault,
                 )
                 Text(
-                    link.url,
+                    // A long URL would otherwise push the icons off the card, so it gets
+                    // exactly one line and an ellipsis.
+                    text = link.url,
                     style = MaterialTheme.typography.bodySmall,
                     color = gh.fgMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            AccentBadge("默认 ${link.defaultMode.shortLabel(link)}")
-        }
 
-        VGap()
+            Spacer(Modifier.width(10.dp))
 
-        // One row of equally weighted buttons: every supported mode, default first
-        // (NavLinks lists it first) and drawn as the primary action.
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            actions.forEach { action ->
-                Box(Modifier.weight(1f)) {
-                    if (action.isDefault) {
-                        GitHubPrimaryButton(
-                            text = action.label,
-                            onClick = { onOpen(action.mode) },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    } else {
-                        GitHubSecondaryButton(
-                            text = action.label,
-                            onClick = { onOpen(action.mode) },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                link.actions().forEach { action ->
+                    NavModeIconButton(
+                        mode = action.mode,
+                        contentDescription = action.label,
+                        // The default method is tinted, not labelled — the earlier
+                        // 「默认 X」 badge is gone, but the shortcut stays discoverable.
+                        emphasized = action.isDefault,
+                        onClick = { onOpen(action.mode) },
+                    )
                 }
             }
         }
     }
+}
+
+/** One way of opening the link, as a bordered square icon button. */
+@Composable
+private fun NavModeIconButton(
+    mode: NavOpenMode,
+    contentDescription: String,
+    emphasized: Boolean,
+    onClick: () -> Unit,
+) {
+    val gh = LocalGitHubColors.current
+    Box(
+        modifier = Modifier
+            .size(38.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (emphasized) gh.accentFg else gh.canvasSubtle)
+            .border(
+                width = 1.dp,
+                color = if (emphasized) gh.accentFg else gh.borderDefault,
+                shape = RoundedCornerShape(6.dp),
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = mode.icon(),
+            // Carries the full action name for TalkBack, so an icon-only button is never an
+            // unlabelled target.
+            contentDescription = contentDescription,
+            tint = if (emphasized) Color.White else gh.fgDefault,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+private fun NavOpenMode.icon(): ImageVector = when (this) {
+    NavOpenMode.BROWSER -> Icons.Filled.Language
+    NavOpenMode.WECHAT -> Icons.AutoMirrored.Filled.Chat
+    NavOpenMode.WECOM -> Icons.Filled.Business
+    NavOpenMode.EXTERNAL_APP -> Icons.AutoMirrored.Filled.OpenInNew
 }

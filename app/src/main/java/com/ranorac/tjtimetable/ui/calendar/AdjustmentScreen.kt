@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -58,6 +59,7 @@ import com.ranorac.tjtimetable.ui.components.SectionHeader
 import com.ranorac.tjtimetable.ui.components.SelectableRow
 import com.ranorac.tjtimetable.ui.components.SnackbarMessageEffect
 import com.ranorac.tjtimetable.ui.components.VGap
+import com.ranorac.tjtimetable.ui.components.pageContentWidth
 import com.ranorac.tjtimetable.ui.theme.LocalGitHubColors
 import java.time.DayOfWeek
 
@@ -104,41 +106,45 @@ fun AdjustmentScreen(
             return@Scaffold
         }
 
-        LazyColumn(
+        Box(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                start = SCREEN_HORIZONTAL_PADDING,
-                end = SCREEN_HORIZONTAL_PADDING,
-                top = 8.dp,
-                bottom = 32.dp,
-            ),
-            // 16dp between cards, matching 设置 — the two list pages used to scroll with
-            // different rhythms (12dp here, 24dp there).
-            verticalArrangement = Arrangement.spacedBy(SECTION_GAP),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            item {
-                SummaryCard(state)
-            }
-            item {
-                CalendarSection(
-                    busy = state.busy,
-                    notice = notice,
-                    onNoticeChange = { notice = it },
-                    onRefresh = onRefresh,
-                    onApplyNotice = {
-                        onApplyNotice(notice)
-                        notice = ""
-                    },
-                )
-            }
-            item {
-                MutedText(
-                    "校历只说明某天是否上课，不会说明「补哪一天的课」——那个口径只存在于教务处通知里。" +
-                        "因此自动判断会标注为「推测」，点任意一天即可改正。",
-                )
-            }
-            items(state.weeks, key = { it.week }) { week ->
-                WeekCard(week = week, onDayClick = { editing = it })
+            LazyColumn(
+                modifier = Modifier.pageContentWidth().fillMaxHeight(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    start = SCREEN_HORIZONTAL_PADDING,
+                    end = SCREEN_HORIZONTAL_PADDING,
+                    top = 8.dp,
+                    bottom = 32.dp,
+                ),
+                // 16dp between cards, matching the other list pages.
+                verticalArrangement = Arrangement.spacedBy(SECTION_GAP),
+            ) {
+                item {
+                    SummaryCard(state)
+                }
+                item {
+                    CalendarSection(
+                        busy = state.busy,
+                        notice = notice,
+                        onNoticeChange = { notice = it },
+                        onRefresh = onRefresh,
+                        onApplyNotice = {
+                            onApplyNotice(notice)
+                            notice = ""
+                        },
+                    )
+                }
+                item {
+                    MutedText(
+                        "校历只说明某天是否上课，不会说明「补哪一天的课」——那个口径只存在于教务处通知里。" +
+                            "因此自动判断会标注为「推测」，点任意一天即可改正。",
+                    )
+                }
+                items(state.weeks, key = { it.week }) { week ->
+                    WeekCard(week = week, onDayClick = { editing = it })
+                }
             }
         }
     }

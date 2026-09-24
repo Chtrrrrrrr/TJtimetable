@@ -25,18 +25,29 @@
 
         getLaunchIntentForPackage 在未声明的包上一律返回 null，所以没有这段声明，
         「已安装企业微信」会被误判成「未安装」，导航卡片就会给出错误的失败提示。
-        下面列的是导航页会直接拉起的应用；浏览器走 ACTION_VIEW，用 <intent> 声明即可。
+        下面列出应用商店里已知的包名；浏览器走 ACTION_VIEW，用 <intent> 声明即可。
+
+        最后那条 MAIN/LAUNCHER 的 <intent> 是给「按包名片段兜底查找」用的：
+        知到之类的应用在不同版本换过包名，写死包名一旦猜错就会被报成「未安装」，
+        而这一条让应用能看见所有带启动图标的包，再按 "zhihuishu" 这类片段匹配。
+        它不申请任何权限，也不读取包以外的东西。
     -->
     <queries>
         <package android:name="com.tencent.mm" />
         <package android:name="com.tencent.wework" />
         <package android:name="com.chaoxing.mobile" />
+        <package android:name="com.chaoxing.ckandroid" />
         <package android:name="com.zhihuishu.zhihuishu" />
         <package android:name="com.zhihuishu.zhidao" />
+        <package android:name="com.zhihuishu.student" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
 

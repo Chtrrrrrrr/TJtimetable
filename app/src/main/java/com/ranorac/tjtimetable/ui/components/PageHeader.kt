@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +41,29 @@ val SECTION_GAP: Dp = 16.dp
 val PAGE_HEADER_HEIGHT: Dp = 64.dp
 
 /**
+ * Widest a page's *content* is allowed to get before it simply stops growing.
+ *
+ * Without this a 设置 card on a tablet stretches the full width of the screen: the text
+ * inside then runs to 100+ characters per line, which is far past the comfortable reading
+ * measure, and the buttons sit marooned at the far left of an enormous empty card. The
+ * cap plus centring keeps every page looking like the phone layout, just with margins.
+ *
+ * 640dp is wide enough that a landscape phone and a small tablet are unaffected — it only
+ * starts to matter on a large tablet, which is exactly where the bug was reported.
+ */
+val SCREEN_MAX_CONTENT_WIDTH: Dp = 640.dp
+
+/**
+ * Constrains page content to [SCREEN_MAX_CONTENT_WIDTH], filling the parent when narrower.
+ *
+ * Order matters: `widthIn` must come first so it tightens the incoming constraints, and
+ * `fillMaxWidth` then fills whatever survived (the cap, or the parent). The other order
+ * would ask for the full parent width first and the cap would lose.
+ */
+fun Modifier.pageContentWidth(): Modifier =
+    this.widthIn(max = SCREEN_MAX_CONTENT_WIDTH).fillMaxWidth()
+
+/**
  * The header every page opens with: a title, an optional subtitle, and optional actions.
  *
  * All three screens used to build their own — 设置 and 调休 with a Material3 `TopAppBar`,
@@ -69,26 +93,34 @@ fun PageHeader(
             .heightIn(min = PAGE_HEADER_HEIGHT)
             .padding(horizontal = SCREEN_HORIZONTAL_PADDING),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Start,
+        // The inner row is capped (and therefore narrower than the screen on a tablet);
+        // centring here keeps the title on the same left edge as the centred page content
+        // below it, instead of stranding it against the screen edge.
+        horizontalArrangement = Arrangement.Center,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                color = gh.fgDefault,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (subtitle != null) {
+        Row(
+            modifier = Modifier.pageContentWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = gh.fgMuted,
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = gh.fgDefault,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (subtitle != null) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = gh.fgMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
+            actions?.invoke(this)
         }
-        actions?.invoke(this)
     }
 }

@@ -30,6 +30,9 @@ enum class NavOpenMode {
  *   the buttons should appear.
  * @param externalAppPackages candidate packages for [NavOpenMode.EXTERNAL_APP]; the first
  *   installed one wins. More than one is normal — vendors rename packages between releases.
+ * @param externalAppMatchTokens last-resort substring match against installed launcher
+ *   packages. A wrong package guess used to be indistinguishable from "not installed",
+ *   which is exactly how a real 知到 install reported itself as missing.
  */
 data class NavLink(
     val id: String,
@@ -39,6 +42,7 @@ data class NavLink(
     val supportedModes: List<NavOpenMode>,
     val externalAppLabel: String? = null,
     val externalAppPackages: List<String> = emptyList(),
+    val externalAppMatchTokens: List<String> = emptyList(),
 )
 
 /** One explicit open button on a card. Every supported mode gets its own. */
@@ -101,7 +105,8 @@ object NavLinks {
             defaultMode = NavOpenMode.BROWSER,
             supportedModes = listOf(NavOpenMode.BROWSER, NavOpenMode.EXTERNAL_APP),
             externalAppLabel = "学习通",
-            externalAppPackages = listOf("com.chaoxing.mobile"),
+            externalAppPackages = listOf("com.chaoxing.mobile", "com.chaoxing.ckandroid"),
+            externalAppMatchTokens = listOf("chaoxing"),
         ),
         NavLink(
             id = "zhihuishu",
@@ -110,10 +115,14 @@ object NavLinks {
             defaultMode = NavOpenMode.EXTERNAL_APP,
             supportedModes = listOf(NavOpenMode.EXTERNAL_APP, NavOpenMode.BROWSER),
             externalAppLabel = "知到",
+            // The published package has changed between releases; the token match below is
+            // what actually finds an installed 知到 when none of these names is right.
             externalAppPackages = listOf(
                 "com.zhihuishu.zhihuishu",
                 "com.zhihuishu.zhidao",
+                "com.zhihuishu.student",
             ),
+            externalAppMatchTokens = listOf("zhihuishu", "zhidao"),
         ),
         NavLink(
             id = "ketangpai",

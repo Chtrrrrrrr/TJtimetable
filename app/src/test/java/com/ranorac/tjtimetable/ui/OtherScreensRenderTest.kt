@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -35,6 +36,7 @@ import com.ranorac.tjtimetable.ui.calendar.DayRow
 import com.ranorac.tjtimetable.ui.calendar.WeekRow
 import com.ranorac.tjtimetable.ui.components.AppBottomBar
 import com.ranorac.tjtimetable.ui.components.BOTTOM_BAR_TAG
+import com.ranorac.tjtimetable.ui.navigation.NavOpenMode
 import com.ranorac.tjtimetable.ui.navigation.NavResult
 import com.ranorac.tjtimetable.ui.navigation.NavStatus
 import com.ranorac.tjtimetable.ui.navigation.NavigationScreen
@@ -288,29 +290,53 @@ class OtherScreensRenderTest {
     }
 
     @Test
-    fun `navigation cards expose an explicit button for every open mode`() {
+    fun `navigation cards expose an icon button for every open mode`() {
         compose.setContent {
             TJTimetableTheme {
                 NavigationScreen(onOpen = { _, _ -> NavResult(NavStatus.OPENED) })
             }
         }
 
-        // 1系统 defaults to 企业微信 but must ALSO offer the browser: the default is never
-        // the only way in. Text is matched with onAllNodes because several cards share the
-        // same button label.
+        // The actions are icon-only now, so the label is carried by the content description
+        // — that is also what keeps the buttons reachable for TalkBack.
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("1系统"))
-        assertTrue(compose.onAllNodesWithText("企业微信打开").fetchSemanticsNodes().isNotEmpty())
-        assertTrue(compose.onAllNodesWithText("浏览器打开").fetchSemanticsNodes().isNotEmpty())
-        // The default is called out on the card rather than left implicit.
-        assertTrue(compose.onAllNodesWithText("默认 企业微信").fetchSemanticsNodes().isNotEmpty())
+        assertTrue(
+            compose.onAllNodesWithContentDescription("企业微信打开").fetchSemanticsNodes().isNotEmpty(),
+        )
+        assertTrue(
+            compose.onAllNodesWithContentDescription("浏览器打开").fetchSemanticsNodes().isNotEmpty(),
+        )
+        // The 「默认 X」 badge is gone by request; the default is now the tappable name.
+        assertTrue(compose.onAllNodesWithText("默认 企业微信").fetchSemanticsNodes().isEmpty())
 
         // 超星学习通/慕课 can be handed to the 学习通 app as well as the browser.
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("超星学习通/慕课"))
-        assertTrue(compose.onAllNodesWithText("打开学习通").fetchSemanticsNodes().isNotEmpty())
+        assertTrue(
+            compose.onAllNodesWithContentDescription("打开学习通").fetchSemanticsNodes().isNotEmpty(),
+        )
 
         // 智慧树/知到 defaults to the 知到 app and still offers the browser.
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("智慧树/知到"))
-        assertTrue(compose.onAllNodesWithText("打开知到").fetchSemanticsNodes().isNotEmpty())
+        assertTrue(
+            compose.onAllNodesWithContentDescription("打开知到").fetchSemanticsNodes().isNotEmpty(),
+        )
+    }
+
+    @Test
+    fun `tapping a navigation card name opens that site's default method`() {
+        val opened = mutableListOf<Pair<String, NavOpenMode>>()
+        compose.setContent {
+            TJTimetableTheme {
+                NavigationScreen(onOpen = { link, mode ->
+                    opened += link.id to mode
+                    NavResult(NavStatus.OPENED)
+                })
+            }
+        }
+
+        // 1系统 defaults to 企业微信, so tapping its name must not fall through to the browser.
+        compose.onNodeWithText("1系统").performClick()
+        assertEquals(listOf("tj-1system" to NavOpenMode.WECOM), opened)
     }
 
     @Test
