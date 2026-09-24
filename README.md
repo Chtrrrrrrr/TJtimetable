@@ -1,6 +1,6 @@
 # TJ课表 · TJtimetable
 
-![version](https://img.shields.io/badge/version-2.2.4-blue)
+![version](https://img.shields.io/badge/version-2.3.6-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Android-3DDC84)
 ![minSdk](https://img.shields.io/badge/minSdk-26-orange)
@@ -31,6 +31,12 @@
 - **课程详情底栏**——课程学分、考核方式、改配色、记备注、隐藏课程。
 - **数据同源**——界面网格、桌面小组件、系统日历与上课提醒全部由同一份
   `TimetableResolver` 展开，节假日、补课日、单双周不可能在其中一处与另一处不一致。
+- **导航**——底栏第四页，集中放常用站点：1系统、canvas系统、好课平台、超星学习通/慕课、
+  智慧树/知到、课堂派、考试/作业。点整张卡片即用该站点的**默认方式**打开，
+  右侧图标可显式选择其它方式（浏览器 / 微信 / 企业微信 / 唤起对应 App）。
+  微信与企业微信均未声明 `http(s)` 浏览 intent filter，第三方应用**无法指定**其内置浏览器，
+  因此这两种方式是「先交给该应用，不接受则唤到前台并把链接复制到剪贴板」，不会假装成功；
+  外部 App（学习通 / 知到）按包名与**应用显示名**两级检索，包名与品牌名毫不相干也能找到。
 
 ## 部署项目
 
@@ -68,7 +74,7 @@
 app/src/main/java/com/ranorac/tjtimetable/
 ├── domain/     纯 Kotlin 领域逻辑（周次、校历、调休、解析），无 Android 依赖
 ├── data/       remote（开放平台 API/导入）、db（Room）、prefs（DataStore）、repo
-├── ui/         theme · components · timetable · calendar · settings
+├── ui/         theme · components · timetable · calendar · navigation · settings
 ├── calendar/   系统日历注册
 ├── notify/     上课提醒（WorkManager）
 ├── export/     .ics 导入导出
