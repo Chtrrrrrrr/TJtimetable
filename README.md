@@ -8,8 +8,6 @@
 ![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)
 ![Vibe%20Coded](https://img.shields.io/badge/vibe--coded-yes-ff69b4.svg)
 
-> 同济大学手机课表应用
-
 适配同济大学教务导入和课程特性的Android课表应用。
 
 > [!NOTE]
