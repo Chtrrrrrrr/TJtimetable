@@ -1,6 +1,6 @@
 # TJ课表 · TJtimetable
 
-![version](https://img.shields.io/badge/version-2.2.1-blue)
+![version](https://img.shields.io/badge/version-2.2.4-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Android-3DDC84)
 ![minSdk](https://img.shields.io/badge/minSdk-26-orange)
