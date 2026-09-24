@@ -8,7 +8,7 @@
 ![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4)
 ![Vibe%20Coded](https://img.shields.io/badge/vibe--coded-yes-ff69b4.svg)
 
-适配同济大学教务导入和课程特性的Android课表应用。
+同济大学手机课表软件，适配教务导入和课程特性。
 
 > [!NOTE]
 > 本项目是 vibecoding 产物，请在安装前自行审阅源码。
