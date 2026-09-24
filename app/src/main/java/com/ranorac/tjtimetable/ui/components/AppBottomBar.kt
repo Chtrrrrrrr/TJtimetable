@@ -16,6 +16,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.EventNote
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -34,8 +35,8 @@ import com.ranorac.tjtimetable.ui.theme.LocalGitHubColors
 /**
  * Height of the bottom bar's content row, excluding the system navigation inset.
  *
- * Every destination renders exactly ONE line — the current tab shows its name, the other
- * two show only their icon — so the bar is a single row of content rather than Material3
+ * Every destination renders exactly ONE line — the current tab shows its name, the others
+ * show only their icon — so the bar is a single row of content rather than Material3
  * `NavigationBar`'s icon-over-label stack (80dp). 44dp leaves the icon room to breathe
  * without putting the two-line layout back; it is also within 4dp of Android's 48dp
  * minimum touch target, which is as close as a single-line bar can reasonably get.
@@ -53,11 +54,12 @@ private data class BottomTab(val label: String, val icon: ImageVector)
 private val BOTTOM_TABS = listOf(
     BottomTab("课表", Icons.Filled.CalendarMonth),
     BottomTab("调休", Icons.AutoMirrored.Filled.EventNote),
+    BottomTab("导航", Icons.Filled.Explore),
     BottomTab("设置", Icons.Filled.Settings),
 )
 
 /**
- * The app's three-destination bottom bar: one line per tab, so it stays short.
+ * The app's four-destination bottom bar: one line per tab, so it stays short.
  *
  * The current destination is shown as its **name**, the others as their **icon**. That is
  * what lets one row carry both pieces of information — a bar that shows an icon *and* a

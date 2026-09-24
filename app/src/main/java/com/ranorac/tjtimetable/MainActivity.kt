@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ranorac.tjtimetable.data.prefs.AppSettings
@@ -35,6 +36,8 @@ import com.ranorac.tjtimetable.scrape.TongjiLoginScreen
 import com.ranorac.tjtimetable.ui.calendar.AdjustmentScreen
 import com.ranorac.tjtimetable.ui.calendar.AdjustmentViewModel
 import com.ranorac.tjtimetable.ui.components.AppBottomBar
+import com.ranorac.tjtimetable.ui.navigation.NavLauncher
+import com.ranorac.tjtimetable.ui.navigation.NavigationScreen
 import com.ranorac.tjtimetable.ui.settings.SettingsScreen
 import com.ranorac.tjtimetable.ui.settings.SettingsViewModel
 import com.ranorac.tjtimetable.ui.theme.LocalGitHubColors
@@ -150,6 +153,7 @@ private fun AppRoot(container: AppContainer) {
                 when (current) {
                     0 -> TimetableRoute(container, onOpenLogin = { showLogin = true })
                     1 -> AdjustmentRoute(container)
+                    2 -> NavigationRoute()
                     else -> SettingsRoute(
                         container = container,
                         viewModel = settingsViewModel,
@@ -246,6 +250,16 @@ private fun AdjustmentRoute(container: AppContainer) {
         onApplyNotice = viewModel::applyNotice,
         onConsumeMessage = viewModel::consumeMessage,
     )
+}
+
+/**
+ * 导航 has no state of its own — the links are a fixed list — so it needs no ViewModel.
+ * The launcher is the only part that touches the platform.
+ */
+@Composable
+private fun NavigationRoute() {
+    val context = LocalContext.current
+    NavigationScreen(onOpen = { link, mode -> NavLauncher.open(context, link, mode) })
 }
 
 @Composable

@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -34,6 +35,9 @@ import com.ranorac.tjtimetable.ui.calendar.DayRow
 import com.ranorac.tjtimetable.ui.calendar.WeekRow
 import com.ranorac.tjtimetable.ui.components.AppBottomBar
 import com.ranorac.tjtimetable.ui.components.BOTTOM_BAR_TAG
+import com.ranorac.tjtimetable.ui.navigation.NavResult
+import com.ranorac.tjtimetable.ui.navigation.NavStatus
+import com.ranorac.tjtimetable.ui.navigation.NavigationScreen
 import com.ranorac.tjtimetable.ui.settings.SettingsScreen
 import com.ranorac.tjtimetable.ui.settings.SettingsUiState
 import com.ranorac.tjtimetable.ui.theme.TJTimetableTheme
@@ -236,15 +240,77 @@ class OtherScreensRenderTest {
             TJTimetableTheme { AppBottomBar(selected = 0, onSelect = {}) }
         }
 
-        // The current destination is the text; the other two are icons that carry the same
+        // The current destination is the text; the other three are icons that carry the same
         // word as their content description, so nothing is hidden from TalkBack either.
         compose.onNodeWithText("课表").assertExists()
         compose.onNodeWithContentDescription("调休").assertExists()
+        compose.onNodeWithContentDescription("导航").assertExists()
         compose.onNodeWithContentDescription("设置").assertExists()
         // One line of content instead of Material3 NavigationBar's icon-over-label stack:
         // 44dp, which is what this gives back to the timetable while staying within 4dp of
         // Android's 48dp minimum touch target.
         compose.onNodeWithTag(BOTTOM_BAR_TAG).assertHeightIsEqualTo(44.dp)
+    }
+
+    @Test
+    fun `bottom bar swaps the name onto whichever page is current`() {
+        compose.setContent {
+            TJTimetableTheme { AppBottomBar(selected = 2, onSelect = {}) }
+        }
+
+        // 导航 sits between 调休 and 设置, and being current it shows its name while the
+        // other three fall back to icons.
+        compose.onNodeWithText("导航").assertExists()
+        compose.onNodeWithContentDescription("课表").assertExists()
+        compose.onNodeWithContentDescription("调休").assertExists()
+        compose.onNodeWithContentDescription("设置").assertExists()
+    }
+
+    // ---------------------------------------------------------------- 导航
+
+    @Test
+    fun `navigation screen shows its own header and every configured site`() {
+        compose.setContent {
+            TJTimetableTheme {
+                NavigationScreen(onOpen = { _, _ -> NavResult(NavStatus.OPENED) })
+            }
+        }
+
+        // Same PageHeader component as the other three pages: 大标题 + 小标题.
+        compose.onNodeWithText("导航").assertExists()
+        compose.onNodeWithText("常用网址").assertExists()
+
+        listOf("1系统", "canvas系统", "好课平台", "超星学习通/慕课", "智慧树/知到", "课堂派")
+            .forEach { title ->
+                compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(title))
+                compose.onNodeWithText(title).assertExists()
+            }
+    }
+
+    @Test
+    fun `navigation cards expose an explicit button for every open mode`() {
+        compose.setContent {
+            TJTimetableTheme {
+                NavigationScreen(onOpen = { _, _ -> NavResult(NavStatus.OPENED) })
+            }
+        }
+
+        // 1系统 defaults to 企业微信 but must ALSO offer the browser: the default is never
+        // the only way in. Text is matched with onAllNodes because several cards share the
+        // same button label.
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("1系统"))
+        assertTrue(compose.onAllNodesWithText("企业微信打开").fetchSemanticsNodes().isNotEmpty())
+        assertTrue(compose.onAllNodesWithText("浏览器打开").fetchSemanticsNodes().isNotEmpty())
+        // The default is called out on the card rather than left implicit.
+        assertTrue(compose.onAllNodesWithText("默认 企业微信").fetchSemanticsNodes().isNotEmpty())
+
+        // 超星学习通/慕课 can be handed to the 学习通 app as well as the browser.
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("超星学习通/慕课"))
+        assertTrue(compose.onAllNodesWithText("打开学习通").fetchSemanticsNodes().isNotEmpty())
+
+        // 智慧树/知到 defaults to the 知到 app and still offers the browser.
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("智慧树/知到"))
+        assertTrue(compose.onAllNodesWithText("打开知到").fetchSemanticsNodes().isNotEmpty())
     }
 
     @Test

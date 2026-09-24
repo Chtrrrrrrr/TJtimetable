@@ -20,6 +20,26 @@
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
 
+    <!--
+        导航页的包可见性声明（Android 11+ 必需）。
+
+        getLaunchIntentForPackage 在未声明的包上一律返回 null，所以没有这段声明，
+        「已安装企业微信」会被误判成「未安装」，导航卡片就会给出错误的失败提示。
+        下面列的是导航页会直接拉起的应用；浏览器走 ACTION_VIEW，用 <intent> 声明即可。
+    -->
+    <queries>
+        <package android:name="com.tencent.mm" />
+        <package android:name="com.tencent.wework" />
+        <package android:name="com.chaoxing.mobile" />
+        <package android:name="com.zhihuishu.zhihuishu" />
+        <package android:name="com.zhihuishu.zhidao" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
     <application
         android:name=".TjApplication"
         android:allowBackup="true"
