@@ -30,8 +30,8 @@ android {
         applicationId = "com.ranorac.tjtimetable"
         minSdk = 26 // java.time on the platform, no desugaring needed
         targetSdk = 35
-        versionCode = 20301
-        versionName = "2.3.1"
+        versionCode = 20302
+        versionName = "2.3.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }

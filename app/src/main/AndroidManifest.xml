@@ -37,6 +37,8 @@
         <package android:name="com.tencent.wework" />
         <package android:name="com.chaoxing.mobile" />
         <package android:name="com.chaoxing.ckandroid" />
+        <!-- 知到：真实包名，与品牌名 zhihuishu 没有任何公共子串，必须精确声明 -->
+        <package android:name="com.able.wisdomtree" />
         <package android:name="com.zhihuishu.zhihuishu" />
         <package android:name="com.zhihuishu.zhidao" />
         <package android:name="com.zhihuishu.student" />

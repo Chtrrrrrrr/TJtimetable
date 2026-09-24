@@ -1,8 +1,12 @@
 package com.ranorac.tjtimetable.ui.navigation
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,9 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -31,15 +33,17 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.ranorac.tjtimetable.R
 import com.ranorac.tjtimetable.ui.components.GitHubCard
 import com.ranorac.tjtimetable.ui.components.PageHeader
 import com.ranorac.tjtimetable.ui.components.SCREEN_HORIZONTAL_PADDING
@@ -113,16 +117,33 @@ fun NavigationScreen(
 private fun NavLinkCard(link: NavLink, onOpen: (NavOpenMode) -> Unit) {
     val gh = LocalGitHubColors.current
 
+    // Press state lives on the text box, so the feedback appears exactly where the tap was
+    // aimed and not across the whole card.
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressBackground by animateColorAsState(
+        targetValue = if (pressed) gh.canvasDefault else Color.Transparent,
+        animationSpec = tween(durationMillis = 90),
+        label = "navTextPress",
+    )
+
     GitHubCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             // The name is the default route: tapping the text opens the link the way that
             // site is normally opened, so the common case needs no aiming.
+            //
+            // The press feedback is deliberately confined to THIS box — a tint that fades in
+            // over the two text lines — rather than a ripple or scale over the whole card
+            // (which is what GitHubCard(onClick = ...) would do).
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(6.dp))
-                    .clickable { onOpen(link.defaultMode) }
-                    .padding(vertical = 2.dp),
+                    .background(pressBackground)
+                    .clickable(interactionSource = interaction, indication = null) {
+                        onOpen(link.defaultMode)
+                    }
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
             ) {
                 Text(
                     text = link.title,
@@ -167,6 +188,7 @@ private fun NavModeIconButton(
     onClick: () -> Unit,
 ) {
     val gh = LocalGitHubColors.current
+    val tint = if (emphasized) Color.White else gh.fgDefault
     Box(
         modifier = Modifier
             .size(38.dp)
@@ -180,20 +202,33 @@ private fun NavModeIconButton(
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = mode.icon(),
-            // Carries the full action name for TalkBack, so an icon-only button is never an
-            // unlabelled target.
-            contentDescription = contentDescription,
-            tint = if (emphasized) Color.White else gh.fgDefault,
-            modifier = Modifier.size(18.dp),
-        )
+        when (mode) {
+            // WeChat and WeCom get their own brand marks: a generic speech bubble does not
+            // tell the student which app is behind the button.
+            NavOpenMode.WECHAT -> Icon(
+                painter = painterResource(R.drawable.ic_brand_wechat),
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(18.dp),
+            )
+            NavOpenMode.WECOM -> Icon(
+                painter = painterResource(R.drawable.ic_brand_wecom),
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(18.dp),
+            )
+            NavOpenMode.BROWSER -> Icon(
+                imageVector = Icons.Filled.Language,
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(18.dp),
+            )
+            NavOpenMode.EXTERNAL_APP -> Icon(
+                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(18.dp),
+            )
+        }
     }
-}
-
-private fun NavOpenMode.icon(): ImageVector = when (this) {
-    NavOpenMode.BROWSER -> Icons.Filled.Language
-    NavOpenMode.WECHAT -> Icons.AutoMirrored.Filled.Chat
-    NavOpenMode.WECOM -> Icons.Filled.Business
-    NavOpenMode.EXTERNAL_APP -> Icons.AutoMirrored.Filled.OpenInNew
 }

@@ -127,6 +127,21 @@ class NavigationLinksTest {
     }
 
     @Test
+    fun `zhidao is launched by its real package, not one derived from the brand name`() {
+        val zhidao = NavLinks.ALL.first { it.id == "zhihuishu" }
+        // com.able.wisdomtree shares NO substring with "zhihuishu". Deriving the package
+        // from the brand is exactly the mistake that made an installed 知到 report itself
+        // as missing, so the real package is pinned here.
+        assertEquals("com.able.wisdomtree", zhidao.externalAppPackages.first())
+        // And the fragment fallback must be able to match that real name.
+        assertTrue(
+            zhidao.externalAppMatchTokens.any { token ->
+                "com.able.wisdomtree".contains(token, ignoreCase = true)
+            },
+        )
+    }
+
+    @Test
     fun `summoning the app tells the student the link went to the clipboard`() {
         val link = NavLinks.ALL.first { it.id == "tj-1system" }
         val message = NavResult(NavStatus.SUMMONED_APP)

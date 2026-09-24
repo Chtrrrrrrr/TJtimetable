@@ -115,14 +115,16 @@ object NavLinks {
             defaultMode = NavOpenMode.EXTERNAL_APP,
             supportedModes = listOf(NavOpenMode.EXTERNAL_APP, NavOpenMode.BROWSER),
             externalAppLabel = "知到",
-            // The published package has changed between releases; the token match below is
-            // what actually finds an installed 知到 when none of these names is right.
+            // 知到's shipping package is com.able.wisdomtree. It shares no substring with
+            // "zhihuishu", so deriving it from the brand name silently failed and a
+            // perfectly installed app was reported as "not installed" — the exact bug that
+            // was reported. The legacy name stays as a fallback; the token match is now
+            // "wisdomtree", which the real package actually contains.
             externalAppPackages = listOf(
+                "com.able.wisdomtree",
                 "com.zhihuishu.zhihuishu",
-                "com.zhihuishu.zhidao",
-                "com.zhihuishu.student",
             ),
-            externalAppMatchTokens = listOf("zhihuishu", "zhidao"),
+            externalAppMatchTokens = listOf("wisdomtree", "zhihuishu"),
         ),
         NavLink(
             id = "ketangpai",
