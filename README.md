@@ -61,11 +61,11 @@
 | 类别 | 选型 |
 |---|---|
 | 语言 / 构建 | Kotlin 2.0.21 · AGP 8.7.3 · Gradle 8.11.1 · KSP |
-| UI | Jetpack Compose · Material 3 · Navigation Compose |
+| UI | Jetpack Compose · Material 3（四个页面由手写状态机切换，未使用 NavHost） |
 | 持久化 | Room 2.6.1 · DataStore Preferences |
 | 网络 / 序列化 | OkHttp 4.12 · kotlinx.serialization 1.7.3 |
 | 后台 / 桌面 | WorkManager 2.10 · Glance 1.1 |
-| 测试 | JUnit4 · Robolectric 4.14 · Compose UI Test |
+| 测试 | JUnit4 · Robolectric 4.14 · Compose UI Test · Room MigrationTestHelper |
 | 兼容性 | minSdk 26（Android 8.0）· targetSdk 35 · compileSdk 35 |
 
 ## 项目结构
@@ -76,6 +76,7 @@ app/src/main/java/com/ranorac/tjtimetable/
 ├── data/       remote（开放平台 API/导入）、db（Room）、prefs（DataStore）、repo
 ├── ui/         theme · components · timetable · calendar · navigation · settings
 ├── calendar/   系统日历注册
+├── scrape/     教务抓取：内置浏览器旁观 + 响应体解析（不接触口令）
 ├── notify/     上课提醒（WorkManager）
 ├── export/     .ics 导入导出
 └── widget/     桌面小组件（Glance）

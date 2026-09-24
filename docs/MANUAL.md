@@ -9,7 +9,7 @@
 
 | 模块 | 状态 |
 |---|---|
-| 周次解析（单双周 / 多段周次 / 各类书写格式） | ✅ 完成，**540 项单元测试全部通过** |
+| 周次解析（单双周 / 多段周次 / 各类书写格式） | ✅ 完成，**580 项单元测试全部通过** |
 | 调休串休（校历类型 + 推测补课 + 公告文本解析 + **逐日编辑界面**） | ✅ 完成 |
 | 学期日历 ↔ 实际日期映射 | ✅ 完成 |
 | 同济开放平台 API 客户端（两种 OAuth2 模式） | ✅ 完成 |
@@ -18,9 +18,10 @@
 | 课表网格 UI（周切换整页滑动、重叠分列、非本周课程虚化、**行高/栏宽按屏幕比例**） | ✅ 完成 |
 | GitHub 风格设计系统 | ✅ 完成 |
 | 底栏（44dp 单行：当前页显示名字，其他页显示图标） | ✅ 完成 |
-| 三页切换过场动画 + 三页共用页头 | ✅ 完成 |
+| 四页切换过场动画 + 四页共用页头 | ✅ 完成 |
 | 设置界面（导入、日历提醒、外观、.ics、开放平台账号、关于） | ✅ 完成 |
 | 调休与校历页（刷新校历、粘贴公告、逐日改正、来源标记、一键恢复自动） | ✅ 完成 |
+| 导航页（常用网址；默认方式 + 各支持方式各自入口，微信 / 企业微信 / 外部 App 唤起） | ✅ 完成 |
 | 课程详情底栏（改配色 / 记备注 / 隐藏课程） | ✅ 完成 |
 | 桌面小组件（Glance，2x2 / 4x2 自适应，圆角背景随系统） | ✅ 完成 |
 | 系统日历注册（**选已有日历** + 默认**只写本周**，可一键**从日历移除**） | ✅ 完成 |
@@ -30,11 +31,11 @@
 | 教务抓取（内置浏览器旁观 + 响应体解析，**不接触口令**） | ✅ 完成 |
 | 课表数据一致性（界面 / 小组件 / 系统日历 / 提醒 同源） | ✅ 完成，由 `CalendarSyncLogicTest` 双向固定 |
 
-已实测可用（v2.2.1）：
+已实测可用（v2.3.6）：
 
 ```
 .\tools\dev\build.ps1                          → BUILD SUCCESSFUL
-.tools\dev\build.ps1 :app:testDebugUnitTest   → 540 tests, 0 failures, 0 errors, 0 skipped
+.tools\dev\build.ps1 :app:testDebugUnitTest   → 580 tests, 0 failures, 0 errors, 0 skipped
 .\tools\dev\build.ps1 :app:lintDebug           → 0 errors, 1 warning（见下）
 .\tools\dev\build.ps1 :app:assembleRelease     → BUILD SUCCESSFUL（R8 混淆通过）
 ```
@@ -296,8 +297,10 @@ app/src/main/java/com/ranorac/tjtimetable/
 │   ├── components/             GitHub 风格通用组件 + PageHeader + 44dp 底栏
 │   ├── timetable/              课表网格（高度自适应）+ ViewModel
 │   ├── calendar/               调休与校历：刷新 / 粘贴公告 / 逐日编辑
+│   ├── navigation/             导航页：站点数据 + 唤起策略（默认 / 微信 / 企微 / 外部 App）
 │   └── settings/               导入 / 日历提醒（选日历）/ 外观 / .ics / 关于 / 开放平台账号
 ├── calendar/                   系统日历注册（写入用户选定的日历 + RRULE 表达单双周）
+├── scrape/                     教务抓取：内置浏览器旁观 + 响应体解析（不接触口令）
 ├── notify/                     应用内上课提醒（WorkManager + 通知）
 ├── export/                     .ics 导入导出（纯 Kotlin，无需凭据）
 └── widget/                     桌面小组件（Glance，今日课程）
@@ -340,7 +343,7 @@ Compose 渲染：`TimetableScreenRenderTest` 11 项、`OtherScreensRenderTest` 1
 - **左栏三行**：节次 + 开始时间 + 结束时间（`08:00` 与 `08:45` 都要在屏内）
 - **只在本周以外出现「回到本周」**，且该控件是返回箭头而非日历图标
 - 空状态与导入中状态
-- **底栏**：当前页是文字、其他两页是图标（图标带同样的 contentDescription），且高度确实是 44dp
+- **底栏**：当前页是文字、其他三页是图标（图标带同样的 contentDescription），且高度确实是 44dp
 - 设置页：各分区、各操作按钮、**「功能与配置」副标题**、输入框回填、提醒区
   （含 `ActivityResult` 启动器注册，这是最容易只在运行时炸的地方）、**目标日历行**、
   **写入范围（仅本周 / 整学期）**、**从日历中移除课表**、
@@ -416,20 +419,20 @@ Compose 渲染：`TimetableScreenRenderTest` 11 项、`OtherScreensRenderTest` 1
   挤出卡片），以及单节但没排教室时。其余情况老师仍在课程详情底栏里。
 - **底栏是手写的 44dp 单行，而不是 Material3 `NavigationBar`**。后者的高度是 token 不是参数
   （80dp 容器 + 64×32 指示器 + 图标上、文字下的两行内容），要么塞不下、要么把组件挤过
-  它自己的内部布局。单行的做法是：**当前页显示名字，其他两页只显示图标**——名字和图标
+  它自己的内部布局。单行的做法是：**当前页显示名字，其他三页只显示图标**——名字和图标
   本来就是同一个页签的两种表达，各显示一份正好占一行，字不用缩小。手写还顺带把语义写实：
   `selectable` + `Role.Tab`，TalkBack 仍能读出「当前页签」，未选中页的图标也带
   contentDescription，所以信息一点没少。窗口内边距在高度**之前**应用，否则三键导航栏的
   内边距会吃掉内容、把文字裁掉。44dp 距 Android 的 48dp 最小触摸目标只差 4dp。
-- **三页共用同一个 `PageHeader`**。此前 设置/调休 用 Material3 `TopAppBar`（64dp、16dp 缩进、
+- **四页共用同一个 `PageHeader`**。此前 设置/调休 用 Material3 `TopAppBar`（64dp、16dp 缩进、
   titleLarge），课表用自己手写的一行（约 52dp、4dp 缩进、titleMedium），于是切页时标题会
   上下跳 10dp、左右跳 12dp，那正是"三页拼在一起"的感觉来源。现在标题、副标题、内缩、
-  基线、动作按钮都在一个组件里，三页都是「大标题 + 小标题」，改一处三页一起变。
-  三页的卡片间距也统一为 16dp（此前 24dp / 12dp 并存）。
+  基线、动作按钮都在一个组件里，四页都是「大标题 + 小标题」，改一处四页一起变。
+  四页的卡片间距也统一为 16dp（此前 24dp / 12dp 并存）。
 - **一次性提示的注销顺序是有讲究的**。`showSnackbar` 会挂起到提示消失为止，而切页会销毁组合、
   取消那个 `LaunchedEffect`——所以「先弹再注销」的写法在切页时会**跳过注销**，消息留在
   ViewModel 里，之后每次切回该页都重放一遍。现在 `SnackbarMessageEffect` 先注销、
-  再把弹出放到组合作用域（不是那个会被 key 变化取消的 effect 里），三页共用一份。
+  再把弹出放到组合作用域（不是那个会被 key 变化取消的 effect 里），四页共用一份。
 - **日历注册让用户选日历，而不是自己建一个**。`Calendars` 的 `ACCOUNT_NAME` /
   `OWNER_ACCOUNT` 只有 sync adapter 能写，普通应用插入会直接抛
   `only sync adapters may write to account_name`——所以"本应用自建一个日历"这条路
@@ -517,7 +520,7 @@ $bt = Get-ChildItem .toolchain\android-sdk\build-tools -Directory |
 > ⚠️ **务必备份 `keystore/` 整个目录。** 同一个 `applicationId` 的后续版本必须用同一把私钥签名，
 > 否则 Android 会拒绝覆盖安装——只能让用户先卸载再装，而卸载会带走本地课表与调休。
 > `apksigner` 的期望输出是 `Verifies` 加上 v2/v3 两行 `true`；
-> 证书指纹应与上一版一致（v2.2.1：SHA-256 `3dec7c9b…34a`）。
+> 证书指纹应与上一版一致（自 v2.1.8 起一直是 SHA-256 `3dec7c9b…34a`，v2.3.6 相同）。
 
 > **网络说明**：`maven.google.com` 与 `dl.google.com` 在部分网络下不可用或很慢，
 > 因此 `settings.gradle.kts` 优先使用阿里云镜像（google/public/gradle-plugin），
@@ -541,7 +544,7 @@ $bt = Get-ChildItem .toolchain\android-sdk\build-tools -Directory |
    配色、备注与手动调休）。代价是**每次 `version` 升级都必须自带真实 `Migration`**，
    否则开发期会直接抛错——这是刻意的取舍：宁可在开发时炸，也不要在用户手上丢数据。
    当前仍是 version 1，尚无迁移需要（但见第 11 条的复合主键变更）。
-4. **真机验证仍需你做**：APK 可构建、540 项测试全绿、lint 0 error，
+4. **真机验证仍需你做**：APK 可构建、580 项测试全绿、lint 0 error，
    **且界面已用 Robolectric + Compose 在 JVM 上真正渲染验证**（见下节）。
    仍需真机确认的是：小组件实际显示（含长按移动时不再露直角）、
    **日历写入你选中的那个日历**、上课提醒的实际送达、
