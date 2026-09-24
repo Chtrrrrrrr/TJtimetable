@@ -30,9 +30,11 @@ enum class NavOpenMode {
  *   the buttons should appear.
  * @param externalAppPackages candidate packages for [NavOpenMode.EXTERNAL_APP]; the first
  *   installed one wins. More than one is normal — vendors rename packages between releases.
- * @param externalAppMatchTokens last-resort substring match against installed launcher
- *   packages. A wrong package guess used to be indistinguishable from "not installed",
- *   which is exactly how a real 知到 install reported itself as missing.
+ * @param externalAppMatchTokens substring match against an installed launcher app's
+ *   **package name or its display name**. Matching the display name is the robust half: the
+ *   student sees 「知到」 in their launcher, and that label does not have to share anything
+ *   with the package (`com.able.wisdomtree`) that ships it.
+ * @param externalAppSchemes schemes the app registers itself, tried last.
  */
 data class NavLink(
     val id: String,
@@ -43,6 +45,7 @@ data class NavLink(
     val externalAppLabel: String? = null,
     val externalAppPackages: List<String> = emptyList(),
     val externalAppMatchTokens: List<String> = emptyList(),
+    val externalAppSchemes: List<String> = emptyList(),
 )
 
 /** One explicit open button on a card. Every supported mode gets its own. */
@@ -106,7 +109,10 @@ object NavLinks {
             supportedModes = listOf(NavOpenMode.BROWSER, NavOpenMode.EXTERNAL_APP),
             externalAppLabel = "学习通",
             externalAppPackages = listOf("com.chaoxing.mobile", "com.chaoxing.ckandroid"),
-            externalAppMatchTokens = listOf("chaoxing"),
+            // The display name is what the student actually sees in their launcher, so it is
+            // matched as well as the package.
+            externalAppMatchTokens = listOf("学习通", "超星", "chaoxing"),
+            externalAppSchemes = listOf("chaoxing://"),
         ),
         NavLink(
             id = "zhihuishu",
@@ -115,16 +121,17 @@ object NavLinks {
             defaultMode = NavOpenMode.EXTERNAL_APP,
             supportedModes = listOf(NavOpenMode.EXTERNAL_APP, NavOpenMode.BROWSER),
             externalAppLabel = "知到",
-            // 知到's shipping package is com.able.wisdomtree. It shares no substring with
-            // "zhihuishu", so deriving it from the brand name silently failed and a
-            // perfectly installed app was reported as "not installed" — the exact bug that
-            // was reported. The legacy name stays as a fallback; the token match is now
-            // "wisdomtree", which the real package actually contains.
+            // 知到 ships as com.able.wisdomtree: the package shares no substring with the
+            // brand, so it cannot be inferred — it has to be known.
             externalAppPackages = listOf(
                 "com.able.wisdomtree",
                 "com.zhihuishu.zhihuishu",
+                "com.zhihuishu.zhidao",
             ),
-            externalAppMatchTokens = listOf("wisdomtree", "zhihuishu"),
+            // Label matching is the safety net that does not depend on knowing the package:
+            // 「知到」/「智慧树」 is what the app calls itself on screen.
+            externalAppMatchTokens = listOf("知到", "智慧树", "wisdomtree", "zhihuishu", "able"),
+            externalAppSchemes = listOf("zhihuishu://", "wisdomtree://"),
         ),
         NavLink(
             id = "ketangpai",

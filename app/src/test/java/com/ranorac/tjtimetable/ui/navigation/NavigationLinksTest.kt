@@ -113,17 +113,33 @@ class NavigationLinksTest {
         chaoxing.externalAppPackages.forEach {
             assertTrue("$it should be tried", chaoxingAttempts.contains(NavAttempt.LaunchApp(it)))
         }
-        // 知到 has shipped under several package names, so the chain ends with a
-        // name-fragment search rather than trusting one hard-coded guess — that guess being
-        // wrong is exactly why an installed 知到 reported itself as missing.
+
+        // 知到 has shipped under several package names, so the chain must not rely on the
+        // hard-coded list alone: it searches installed apps by name, and finally tries the
+        // app's own scheme. Trusting one guessed package is exactly why an installed 知到
+        // reported itself as missing.
         val zhihuishu = NavLinks.ALL.first { it.id == "zhihuishu" }
         val znAttempts = attemptsFor(zhihuishu, NavOpenMode.EXTERNAL_APP)
         assertTrue(znAttempts.none { it is NavAttempt.ViewUrlAnywhere })
-        assertEquals(
-            NavAttempt.LaunchAppMatching(zhihuishu.externalAppMatchTokens),
-            znAttempts.last(),
+        assertTrue(
+            "a name-based search must be in the chain",
+            znAttempts.contains(NavAttempt.LaunchAppMatching(zhihuishu.externalAppMatchTokens)),
         )
-        assertTrue("the fragment search needs tokens", zhihuishu.externalAppMatchTokens.isNotEmpty())
+        // Schemes come last, after both package and name resolution.
+        assertEquals(NavAttempt.LaunchScheme(zhihuishu.externalAppSchemes.last()), znAttempts.last())
+    }
+
+    @Test
+    fun `the external app search can match by display name, not only by package`() {
+        // The package that ships 知到 (com.able.wisdomtree) does not resemble 「知到」 at all,
+        // so the label is the half of the search that does not depend on knowing the package.
+        val zhidao = NavLinks.ALL.first { it.id == "zhihuishu" }
+        assertTrue(
+            "the on-screen name must be one of the search tokens",
+            zhidao.externalAppMatchTokens.contains("知到"),
+        )
+        val chaoxing = NavLinks.ALL.first { it.id == "chaoxing" }
+        assertTrue(chaoxing.externalAppMatchTokens.contains("学习通"))
     }
 
     @Test

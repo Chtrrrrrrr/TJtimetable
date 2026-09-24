@@ -76,10 +76,15 @@ fun attemptsFor(link: NavLink, mode: NavOpenMode): List<NavAttempt> = when (mode
     )
 
     NavOpenMode.EXTERNAL_APP -> buildList {
+        // 1. the known package names
         link.externalAppPackages.forEach { add(NavAttempt.LaunchApp(it)) }
+        // 2. resolve whatever IS installed by package fragment or display name — this is the
+        //    step that does not depend on me knowing the package in advance
         if (link.externalAppMatchTokens.isNotEmpty()) {
             add(NavAttempt.LaunchAppMatching(link.externalAppMatchTokens))
         }
+        // 3. last resort: a scheme the app registers itself
+        link.externalAppSchemes.forEach { add(NavAttempt.LaunchScheme(it)) }
     }
 }
 
@@ -129,8 +134,15 @@ fun NavResult.messageFor(link: NavLink, mode: NavOpenMode): String? = when (stat
     NavStatus.SUMMONED_APP ->
         "已把链接复制到剪贴板并打开${mode.shortLabel(link)}，粘贴即可访问" +
             "（Android 不允许第三方应用直接在${mode.shortLabel(link)}内打开网页）"
-    NavStatus.UNAVAILABLE ->
-        "未检测到「${link.externalAppLabel ?: "该应用"}」，请安装后再试"
+    NavStatus.UNAVAILABLE -> buildString {
+        // Say what was actually searched, so a failure is diagnosable from the screen
+        // instead of being another guess.
+        append("未找到「").append(link.externalAppLabel ?: "该应用").append("」。")
+        if (link.externalAppPackages.isNotEmpty()) {
+            append("已尝试包名 ").append(link.externalAppPackages.joinToString("、")).append("；")
+        }
+        append("并按应用名检索了所有已安装应用。")
+    }
     NavStatus.FAILED -> "打开失败，请稍后重试"
 }
 
@@ -190,7 +202,12 @@ object NavLauncher {
     }
 
     /**
-     * The first installed launcher app whose package name contains one of [tokens].
+     * The first installed launcher app whose **package name or display name** contains one
+     * of [tokens].
+     *
+     * Matching the label is the important half: the package that ships an app
+     * (`com.able.wisdomtree`) need not resemble the name the student sees (「知到」), so a
+     * package-only search silently reports a perfectly installed app as missing.
      *
      * `queryIntentActivities` only sees packages this app declared in `<queries>`, which is
      * why the manifest asks for the launcher intent.
@@ -198,16 +215,21 @@ object NavLauncher {
     private fun matchingLaunchIntent(context: Context, tokens: List<String>): Intent? {
         if (tokens.isEmpty()) return null
         val pm = context.packageManager
-        val packageName = pm
+        val match = pm
             .queryIntentActivities(
                 Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),
                 0,
             )
             .asSequence()
-            .mapNotNull { it.activityInfo?.packageName }
-            .distinct()
-            .firstOrNull { pkg -> tokens.any { token -> pkg.contains(token, ignoreCase = true) } }
-            ?: return null
+            .firstOrNull { resolved ->
+                val packageName = resolved.activityInfo?.packageName ?: return@firstOrNull false
+                val label = runCatching { resolved.loadLabel(pm).toString() }.getOrDefault("")
+                tokens.any { token ->
+                    packageName.contains(token, ignoreCase = true) ||
+                        label.contains(token, ignoreCase = true)
+                }
+            } ?: return null
+        val packageName = match.activityInfo?.packageName ?: return null
         return pm.getLaunchIntentForPackage(packageName)
     }
 
