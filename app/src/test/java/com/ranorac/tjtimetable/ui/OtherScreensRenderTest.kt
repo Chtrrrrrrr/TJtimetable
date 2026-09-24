@@ -10,6 +10,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -323,7 +324,7 @@ class OtherScreensRenderTest {
     }
 
     @Test
-    fun `tapping a navigation card name opens that site's default method`() {
+    fun `tapping anywhere on a navigation card opens that site's default method`() {
         val opened = mutableListOf<Pair<String, NavOpenMode>>()
         compose.setContent {
             TJTimetableTheme {
@@ -334,9 +335,31 @@ class OtherScreensRenderTest {
             }
         }
 
-        // 1系统 defaults to 企业微信, so tapping its name must not fall through to the browser.
+        // The whole card is the target; 1系统 defaults to 企业微信, so a tap must not fall
+        // through to the browser.
         compose.onNodeWithText("1系统").performClick()
         assertEquals(listOf("tj-1system" to NavOpenMode.WECOM), opened)
+    }
+
+    @Test
+    fun `tapping a mode icon opens that mode and is not swallowed by the card`() {
+        val opened = mutableListOf<Pair<String, NavOpenMode>>()
+        compose.setContent {
+            TJTimetableTheme {
+                NavigationScreen(onOpen = { link, mode ->
+                    opened += link.id to mode
+                    NavResult(NavStatus.OPENED)
+                })
+            }
+        }
+
+        // Now that the card itself is clickable, the icon buttons must still win the gesture
+        // where they sit — otherwise every icon would silently open the card's default mode.
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("1系统"))
+        compose.onAllNodesWithContentDescription("浏览器打开").onFirst().performClick()
+
+        assertEquals(1, opened.size)
+        assertEquals(NavOpenMode.BROWSER, opened.single().second)
     }
 
     @Test
