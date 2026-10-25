@@ -9,6 +9,7 @@
 ![Vibe%20Coded](https://img.shields.io/badge/vibe--coded-yes-ff69b4.svg)
 
 针对同济大学的课表软件，适配教务导入和课程特性。
+
 下载链接[Release](https://github.com/Chtrrrrrrr/TJtimetable/releases)
 
 ## 功能特性
